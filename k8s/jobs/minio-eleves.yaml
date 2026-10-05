@@ -1,0 +1,24 @@
+# À lancer une seule fois après la création du Secret : crée dans MinIO le
+# compte commun des étudiants (lecture/écriture S3, sans droits d'administration).
+# Hors du dossier synchronisé : un Job terminé ne se ré-applique pas.
+apiVersion: batch/v1
+kind: Job
+metadata: {name: minio-eleves, namespace: cloudquest}
+spec:
+  ttlSecondsAfterFinished: 600
+  backoffLimit: 6
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: mc
+          image: bitnamilegacy/minio:2025.4.22
+          command: ["/bin/bash", "-ec"]
+          args:
+            - |
+              export MC_CONFIG_DIR=/tmp/mc
+              mc alias set cq http://minio:9000 "$ROOT_USER" "$ROOT_PASSWORD"
+              mc admin user add cq "$STUDENT_ACCESS_KEY" "$STUDENT_SECRET_KEY"
+              mc admin policy attach cq readwrite --user "$STUDENT_ACCESS_KEY" || true
+              mc admin user info cq "$STUDENT_ACCESS_KEY"
+          envFrom: [{secretRef: {name: cloudquest}}]

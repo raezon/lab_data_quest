@@ -1,0 +1,259 @@
+# CloudQuest sur une plateforme partagée (k3s + Traefik) : le jeu et ses trois
+# émulateurs, pour toute une classe. Chaque étudiant·e a un compte et des
+# ressources suffixées (CQ_MULTI=1).
+#
+# Le Secret « cloudquest » n'est PAS dans ce fichier (dépôt public) :
+#   kubectl -n cloudquest create secret generic cloudquest \
+#     --from-literal=ROOT_USER=… --from-literal=ROOT_PASSWORD=… \
+#     --from-literal=STUDENT_ACCESS_KEY=… --from-literal=STUDENT_SECRET_KEY=… \
+#     --from-literal=TEACHER_PASSWORD=…
+# puis, une seule fois, le compte MinIO des étudiants : k8s/jobs/minio-eleves.yaml
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: cloudquest
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata: {name: cloudquest-data, namespace: cloudquest}
+spec:
+  accessModes: [ReadWriteOnce]
+  resources: {requests: {storage: 100Mi}}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata: {name: minio-data, namespace: cloudquest}
+spec:
+  accessModes: [ReadWriteOnce]
+  resources: {requests: {storage: 3Gi}}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata: {name: dynamodb-data, namespace: cloudquest}
+spec:
+  accessModes: [ReadWriteOnce]
+  resources: {requests: {storage: 1Gi}}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata: {name: sqs-data, namespace: cloudquest}
+spec:
+  accessModes: [ReadWriteOnce]
+  resources: {requests: {storage: 50Mi}}
+---
+# S3 -> MinIO
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: minio, namespace: cloudquest}
+spec:
+  replicas: 1
+  strategy: {type: Recreate}
+  selector: {matchLabels: {app: minio}}
+  template:
+    metadata: {labels: {app: minio}}
+    spec:
+      securityContext: {fsGroup: 1001}
+      containers:
+        - name: minio
+          image: bitnamilegacy/minio:2025.4.22
+          env:
+            - name: MINIO_ROOT_USER
+              valueFrom: {secretKeyRef: {name: cloudquest, key: ROOT_USER}}
+            - name: MINIO_ROOT_PASSWORD
+              valueFrom: {secretKeyRef: {name: cloudquest, key: ROOT_PASSWORD}}
+            - name: MINIO_BROWSER_REDIRECT_URL
+              value: https://cq-console.158-178-196-145.sslip.io
+          ports: [{containerPort: 9000}, {containerPort: 9001}]
+          readinessProbe:
+            httpGet: {path: /minio/health/live, port: 9000}
+            periodSeconds: 5
+          resources:
+            requests: {cpu: 50m, memory: 192Mi}
+            limits: {cpu: "1", memory: 768Mi}
+          volumeMounts: [{name: data, mountPath: /bitnami/minio/data}]
+      volumes:
+        - name: data
+          persistentVolumeClaim: {claimName: minio-data}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: minio, namespace: cloudquest}
+spec:
+  selector: {app: minio}
+  ports:
+    - {name: api, port: 9000}
+    - {name: console, port: 9001}
+---
+# DynamoDB -> DynamoDB Local (tables conservées sur disque)
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: dynamodb, namespace: cloudquest}
+spec:
+  replicas: 1
+  strategy: {type: Recreate}
+  selector: {matchLabels: {app: dynamodb}}
+  template:
+    metadata: {labels: {app: dynamodb}}
+    spec:
+      securityContext: {fsGroup: 1000}
+      containers:
+        - name: dynamodb
+          image: amazon/dynamodb-local:2.5.4
+          args: ["-jar", "DynamoDBLocal.jar", "-sharedDb", "-dbPath", "/data"]
+          env:
+            - {name: JAVA_TOOL_OPTIONS, value: "-Xmx320m"}
+          ports: [{containerPort: 8000}]
+          readinessProbe:
+            tcpSocket: {port: 8000}
+            periodSeconds: 5
+          resources:
+            requests: {cpu: 50m, memory: 192Mi}
+            limits: {cpu: "1", memory: 640Mi}
+          volumeMounts: [{name: data, mountPath: /data}]
+      volumes:
+        - name: data
+          persistentVolumeClaim: {claimName: dynamodb-data}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: dynamodb, namespace: cloudquest}
+spec:
+  selector: {app: dynamodb}
+  ports: [{port: 8000}]
+---
+# SQS -> ElasticMQ (la liste des files est conservée, pas les messages)
+apiVersion: v1
+kind: ConfigMap
+metadata: {name: elasticmq, namespace: cloudquest}
+data:
+  elasticmq.conf: |
+    include classpath("application.conf")
+    # Adresse publique : c'est elle qui apparaît dans les URL de file.
+    node-address {
+      protocol = https
+      host = "cq-sqs.158-178-196-145.sslip.io"
+      port = 443
+      context-path = ""
+    }
+    rest-sqs {
+      enabled = true
+      bind-port = 9324
+      bind-hostname = "0.0.0.0"
+      sqs-limits = strict
+    }
+    rest-stats { enabled = false }
+    queues-storage {
+      enabled = true
+      path = "/data/queues.conf"
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: sqs, namespace: cloudquest}
+spec:
+  replicas: 1
+  strategy: {type: Recreate}
+  selector: {matchLabels: {app: sqs}}
+  template:
+    metadata: {labels: {app: sqs}}
+    spec:
+      securityContext: {fsGroup: 1001}
+      containers:
+        - name: elasticmq
+          image: softwaremill/elasticmq-native:1.6.11
+          ports: [{containerPort: 9324}]
+          readinessProbe:
+            tcpSocket: {port: 9324}
+            periodSeconds: 5
+          resources:
+            requests: {cpu: 25m, memory: 64Mi}
+            limits: {cpu: 500m, memory: 384Mi}
+          volumeMounts:
+            - {name: conf, mountPath: /opt/elasticmq.conf, subPath: elasticmq.conf}
+            - {name: data, mountPath: /data}
+      volumes:
+        - name: conf
+          configMap: {name: elasticmq}
+        - name: data
+          persistentVolumeClaim: {claimName: sqs-data}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: sqs, namespace: cloudquest}
+spec:
+  selector: {app: sqs}
+  ports: [{port: 9324}]
+---
+# Le jeu
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: cloudquest, namespace: cloudquest}
+spec:
+  replicas: 1
+  strategy: {type: Recreate}
+  selector: {matchLabels: {app: cloudquest}}
+  template:
+    metadata: {labels: {app: cloudquest}}
+    spec:
+      automountServiceAccountToken: false
+      securityContext: {runAsUser: 1000, runAsGroup: 1000, fsGroup: 1000}
+      containers:
+        - name: cloudquest
+          image: cloudquest:latest
+          imagePullPolicy: Never
+          env:
+            - {name: CQ_MULTI, value: "1"}
+            - {name: CQ_S3_ENDPOINT, value: "http://minio:9000"}
+            - {name: CQ_DYNAMO_ENDPOINT, value: "http://dynamodb:8000"}
+            - {name: CQ_SQS_ENDPOINT, value: "http://sqs:9324"}
+            - {name: CQ_S3_PUBLIC, value: "https://cq-s3.158-178-196-145.sslip.io"}
+            - {name: CQ_DYNAMO_PUBLIC, value: "https://cq-dynamodb.158-178-196-145.sslip.io"}
+            - {name: CQ_SQS_PUBLIC, value: "https://cq-sqs.158-178-196-145.sslip.io"}
+            - {name: CQ_S3_CONSOLE, value: "https://cq-console.158-178-196-145.sslip.io"}
+            - {name: CQ_SQS_CONSOLE, value: "none"}
+            - name: CQ_ACCESS_KEY
+              valueFrom: {secretKeyRef: {name: cloudquest, key: ROOT_USER}}
+            - name: CQ_SECRET_KEY
+              valueFrom: {secretKeyRef: {name: cloudquest, key: ROOT_PASSWORD}}
+            - name: CQ_STUDENT_ACCESS_KEY
+              valueFrom: {secretKeyRef: {name: cloudquest, key: STUDENT_ACCESS_KEY}}
+            - name: CQ_STUDENT_SECRET_KEY
+              valueFrom: {secretKeyRef: {name: cloudquest, key: STUDENT_SECRET_KEY}}
+            - name: CQ_TEACHER_PASSWORD
+              valueFrom: {secretKeyRef: {name: cloudquest, key: TEACHER_PASSWORD}}
+          ports: [{containerPort: 8090}]
+          readinessProbe:
+            httpGet: {path: /static/style.css, port: 8090}
+            periodSeconds: 5
+          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true}
+          resources:
+            requests: {cpu: 25m, memory: 32Mi}
+            limits: {cpu: 500m, memory: 192Mi}
+          volumeMounts: [{name: data, mountPath: /data}]
+      volumes:
+        - name: data
+          persistentVolumeClaim: {claimName: cloudquest-data}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: cloudquest, namespace: cloudquest}
+spec:
+  selector: {app: cloudquest}
+  ports: [{port: 8090}]
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata: {name: cloudquest, namespace: cloudquest}
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: cloudquest.158-178-196-145.sslip.io
+      http: {paths: [{path: /, pathType: Prefix, backend: {service: {name: cloudquest, port: {number: 8090}}}}]}
+    - host: cq-s3.158-178-196-145.sslip.io
+      http: {paths: [{path: /, pathType: Prefix, backend: {service: {name: minio, port: {number: 9000}}}}]}
+    - host: cq-console.158-178-196-145.sslip.io
+      http: {paths: [{path: /, pathType: Prefix, backend: {service: {name: minio, port: {number: 9001}}}}]}
+    - host: cq-dynamodb.158-178-196-145.sslip.io
+      http: {paths: [{path: /, pathType: Prefix, backend: {service: {name: dynamodb, port: {number: 8000}}}}]}
+    - host: cq-sqs.158-178-196-145.sslip.io
+      http: {paths: [{path: /, pathType: Prefix, backend: {service: {name: sqs, port: {number: 9324}}}}]}

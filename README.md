@@ -75,6 +75,7 @@ internal/web/        routes HTTP, gabarits HTML et CSS embarqués
 projet/pipeline/     squelette élève du projet final
 docs/                cahier de projet (HTML source + PDF)
 docker-compose.yml   émulateurs + clients mc et aws (profil « tools »)
+Dockerfile, k8s/     image du jeu et déploiement d'une plateforme partagée
 ```
 
 Ajouter un défi : écrire une fonction renvoyant un `*game.Challenge` (récit, objectif, étapes, indices, `Check`) et l'ajouter à la liste `Challenges` de son chapitre.
@@ -88,9 +89,43 @@ Ajouter un défi : écrire une fonction renvoyant un `*game.Challenge` (récit, 
 | `CQ_S3_ENDPOINT`, `CQ_DYNAMO_ENDPOINT`, `CQ_SQS_ENDPOINT` | ports ci-dessus | adresses des émulateurs |
 | `CQ_ACCESS_KEY`, `CQ_SECRET_KEY`, `CQ_REGION` | `cloudquest`, `cloudquest-secret`, `us-east-1` | identifiants |
 
+## Plateforme partagée (une instance pour toute une classe)
+
+Avec `CQ_MULTI=1`, une seule instance du jeu et des émulateurs sert toute la classe :
+
+- chaque étudiant·e se connecte avec **prénom + nom + code secret** (choisi à la première connexion) ;
+- ses ressources portent un **suffixe personnel** (`livrexpress-factures-aminab`, `Commandes-aminab`,
+  `commandes-entrantes-aminab`, `paiements-aminab.fifo`…) : les énoncés, les vérifications et les messages
+  l'affichent automatiquement, et personne ne profite du travail d'un·e autre ;
+- les étudiants utilisent l'AWS CLI depuis leur poste, avec les adresses publiques et la clé affichées dans
+  « Accès et identifiants » ;
+- pour le projet final, le worker lit le suffixe dans `CQ_SUFFIXE`.
+
+| Variable | Rôle |
+|---|---|
+| `CQ_MULTI=1` | active les comptes et les suffixes |
+| `CQ_S3_PUBLIC`, `CQ_DYNAMO_PUBLIC`, `CQ_SQS_PUBLIC` | adresses montrées aux étudiants (le jeu garde `CQ_*_ENDPOINT` pour ses propres appels) |
+| `CQ_STUDENT_ACCESS_KEY`, `CQ_STUDENT_SECRET_KEY` | identifiants montrés aux étudiants (défaut : ceux du jeu) |
+| `CQ_S3_CONSOLE`, `CQ_SQS_CONSOLE` | adresse des interfaces web, ou `none` pour masquer le lien |
+| `CQ_TEACHER_PASSWORD` | active l'espace formateur |
+| `CQ_DOCS` | dossier servi sous `/docs/` (cahier de projet PDF) |
+
+`Dockerfile` construit l'image du jeu ; `k8s/cloudquest.yaml` déploie le jeu, MinIO, DynamoDB Local (tables sur disque)
+et ElasticMQ derrière un Ingress Traefik. Le Secret n'est pas dans le dépôt : les commandes sont en tête du manifeste.
+Les clés d'accès doivent être **alphanumériques** (DynamoDB Local refuse les autres caractères). DynamoDB Local et
+ElasticMQ ne vérifient pas les signatures : filtrez leurs adresses publiques sur la clé d'accès de la classe
+(en-tête `Authorization` contenant `Credential=<clé>/`) dans le proxy frontal.
+
+### Espace formateur
+
+`/formateur` (mot de passe `CQ_TEACHER_PASSWORD`, disponible aussi en local) affiche les scores de tous les étudiants :
+classement détaillé (XP, défis par chapitre, quiz, indices, essais, dernière activité), taux de réussite par défi,
+fiche par étudiant·e, export CSV, actualisation automatique. On peut y réinitialiser un code secret oublié ou supprimer un compte.
+
 ## Limites à connaître
 
-- Les ressources (buckets, tables, files) ont des noms fixes : **une instance des émulateurs par étudiant·e**. Le plus simple est que chacun lance le projet sur son poste.
+- En local, les ressources (buckets, tables, files) ont des noms fixes : **une instance des émulateurs par étudiant·e**. Pour une classe entière sur une seule instance, voir « Plateforme partagée ».
+- Sur une plateforme partagée, tous les étudiants utilisent la même clé : le suffixe évite les collisions, il n'empêche pas de toucher aux ressources d'un·e autre.
 - DynamoDB Local et ElasticMQ tournent en mémoire : `docker compose down` efface tables et files (les buckets MinIO sont conservés dans un volume). La progression du jeu, elle, reste dans `data/progress.json`.
 - Tout repartir de zéro : `docker compose down -v && rm -rf data`.
 
