@@ -1,0 +1,266 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>CloudQuest — Cahier de projet LivrExpress</title>
+<style>
+@page { size: A4; margin: 22mm 18mm 20mm; @bottom-center { content: "CloudQuest — Cahier de projet · page " counter(page) " / " counter(pages); font-size: 8.5pt; color: #777; } }
+@page :first { margin: 0; @bottom-center { content: none; } }
+body { font-family: "DejaVu Sans", "Noto Sans", sans-serif; font-size: 10.5pt; line-height: 1.5; color: #1c2333; }
+h1 { font-size: 20pt; color: #c26a00; border-bottom: 2px solid #ff9900; padding-bottom: 4px; page-break-before: always; margin-top: 0; }
+h2 { font-size: 13pt; color: #1c2333; margin: 18px 0 6px; page-break-after: avoid; }
+h3 { font-size: 11pt; margin: 12px 0 4px; page-break-after: avoid; }
+code, pre { font-family: "DejaVu Sans Mono", monospace; font-size: 9pt; }
+code { background: #f1f3f8; padding: 1px 4px; border-radius: 3px; }
+pre { background: #10172a; color: #d8e1f5; padding: 10px 12px; border-radius: 6px; white-space: pre-wrap; page-break-inside: avoid; }
+table { width: 100%; border-collapse: collapse; margin: 8px 0; page-break-inside: avoid; }
+th, td { border: 1px solid #c9d0de; padding: 5px 8px; text-align: left; vertical-align: top; }
+th { background: #eef1f7; font-size: 9.5pt; }
+.cover { height: 297mm; background: #10172a; color: #fff; padding: 60mm 22mm 0; box-sizing: border-box; }
+.cover .logo { font-size: 34pt; font-weight: bold; } .cover .logo span { color: #ff9900; }
+.cover .title { font-size: 24pt; font-weight: bold; margin-top: 18mm; line-height: 1.3; }
+.cover p { color: #b9c4dd; font-size: 12pt; max-width: 130mm; }
+.cover .foot { margin-top: 50mm; font-size: 10pt; color: #8fa0c4; border-top: 1px solid #33415f; padding-top: 6mm; }
+.box { border-left: 4px solid #ff9900; background: #fff7e8; padding: 8px 12px; margin: 10px 0; page-break-inside: avoid; }
+.box.story { border-color: #3d7fd9; background: #eef5ff; font-style: italic; }
+.box.rule { border-color: #2e9e6b; background: #ecf9f2; }
+.box.warn { border-color: #d9534f; background: #fdf0ef; }
+.step { border: 1px solid #c9d0de; border-radius: 6px; padding: 8px 12px; margin: 10px 0; page-break-inside: avoid; }
+.step h3 { margin-top: 0; } .step .n { display: inline-block; background: #ff9900; color: #fff; border-radius: 50%; width: 18px; height: 18px; text-align: center; line-height: 18px; font-size: 9pt; margin-right: 6px; }
+.q { margin: 8px 0 2px; page-break-inside: avoid; }
+.lines { border-bottom: 1px dotted #9aa3b5; height: 7mm; }
+.small { font-size: 9pt; color: #5b6478; }
+ul, ol { margin: 4px 0; padding-left: 20px; } li { margin: 2px 0; }
+</style>
+</head>
+<body>
+
+<div class="cover">
+  <div class="logo">☁ Cloud<span>Quest</span></div>
+  <div class="title">Cahier de projet<br>Le pipeline de commandes LivrExpress</div>
+  <p>Stockage objet, base NoSQL et files de messages : concevoir et réaliser, en local, une architecture de données de type AWS.</p>
+  <p>Services étudiés : Amazon S3 (MinIO) · Amazon DynamoDB (DynamoDB Local) · Amazon SQS (ElasticMQ)<br>Langage du projet : Go</p>
+  <div class="foot">Nom : ............................................ &nbsp; Prénom : ............................................ &nbsp; Groupe : ................<br><br>
+  Document élève — à compléter et à rendre avec le code du projet.</div>
+</div>
+
+<h1>1. Contexte</h1>
+
+<div class="box story">« Vendredi noir, 21 h 14. Le site de LivrExpress reçoit quarante commandes par seconde. À 21 h 15, le serveur de base de données sature. À 21 h 20, le site répond “Erreur 500”. Quand tout redémarre, 1 312 commandes payées ont disparu, et personne ne sait lesquelles. »</div>
+
+<p><strong>LivrExpress</strong> est une entreprise algérienne de livraison de colis (Alger, Oran, Constantine, Annaba…). En cinq ans, elle est passée de 200 à 30 000 commandes par jour. Son système d'information, lui, n'a pas changé :</p>
+<ul>
+  <li>un <strong>serveur unique</strong> héberge le site web, la base MySQL et les fichiers ;</li>
+  <li>les <strong>factures PDF et bons de livraison</strong> sont enregistrés sur un partage réseau qui se remplit chaque mois ;</li>
+  <li>le site <strong>écrit directement</strong> chaque commande en base : si la base ralentit, le site ralentit ; si elle tombe, les commandes sont perdues ;</li>
+  <li>une facture écrasée par erreur est <strong>définitivement perdue</strong> ; il n'existe pas d'historique.</li>
+</ul>
+<p>Après l'incident, Karim (directeur technique) décide de reconstruire la chaîne de traitement des commandes sur des services de données managés, sur le modèle d'AWS. Vous rejoignez l'équipe comme <strong>ingénieur·e cloud junior</strong>, aux côtés de Yasmine (données) et Mehdi (exploitation).</p>
+
+<h2>1.1 Le problème à résoudre</h2>
+<table>
+  <tr><th style="width:38%">Problème constaté</th><th>Besoin exprimé par l'entreprise</th></tr>
+  <tr><td>Le partage de fichiers sature</td><td>Un stockage de documents sans limite pratique de capacité, organisé, avec nettoyage automatique des fichiers temporaires.</td></tr>
+  <tr><td>Factures écrasées ou supprimées par erreur</td><td>Pouvoir revenir à une version précédente d'un document.</td></tr>
+  <tr><td>Envoi de factures aux clients par e-mail en pièce jointe</td><td>Partager un document précis, pour une durée limitée, sans rendre le stockage public.</td></tr>
+  <tr><td>La base relationnelle unique ne suit plus la charge</td><td>Une base qui répond en temps constant quel que soit le volume, pour des accès simples et connus à l'avance.</td></tr>
+  <tr><td>Commandes perdues quand la base est indisponible</td><td>Ne jamais perdre une commande acceptée, même si le traitement est en panne.</td></tr>
+  <tr><td>Un message mal formé bloque tout le traitement</td><td>Isoler les messages défectueux sans arrêter la chaîne.</td></tr>
+</table>
+
+<h2>1.2 L'architecture cible</h2>
+<pre style="font-size:7.2pt; white-space:pre">
+ Site web ──► [ File SQS : commandes-entrantes ] ──► Worker Go ──► [ Table DynamoDB : Commandes ]
+                        │ (échecs répétés)              │
+                        ▼                               └────────► [ Bucket S3 : livrexpress-factures ]
+              [ File SQS : commandes-entrantes-dlq ]                     recus/&lt;commandeId&gt;.json
+</pre>
+<p>Vous ne disposez d'aucun compte AWS : tout est <strong>émulé sur votre poste</strong> avec des logiciels qui parlent les mêmes API. Ce que vous apprenez ici se transpose tel quel sur AWS : seule l'adresse du service (l'<em>endpoint</em>) change.</p>
+<table>
+  <tr><th>Service AWS</th><th>Émulateur local</th><th>Adresse de l'API</th><th>Interface web</th></tr>
+  <tr><td>Amazon S3</td><td>MinIO</td><td><code>http://127.0.0.1:9100</code></td><td><code>http://127.0.0.1:9101</code></td></tr>
+  <tr><td>Amazon DynamoDB</td><td>DynamoDB Local</td><td><code>http://127.0.0.1:8100</code></td><td>—</td></tr>
+  <tr><td>Amazon SQS</td><td>ElasticMQ</td><td><code>http://127.0.0.1:9324</code></td><td><code>http://127.0.0.1:9325</code></td></tr>
+</table>
+<p class="small">Identifiants locaux : clé d'accès <code>cloudquest</code>, clé secrète <code>cloudquest-secret</code>, région <code>us-east-1</code>.</p>
+
+<h1>2. Organisation du travail</h1>
+
+<h2>2.1 Mise en route</h2>
+<pre>docker compose up -d            # démarre MinIO, DynamoDB Local et ElasticMQ
+go run ./cmd/cloudquest         # démarre le jeu
+# puis ouvrir http://127.0.0.1:8090</pre>
+<p>Deux outils en ligne de commande sont fournis, déjà configurés :</p>
+<pre>docker compose run --rm mc ls local
+docker compose run --rm aws s3 ls --endpoint-url http://127.0.0.1:9100</pre>
+
+<h2>2.2 Déroulement</h2>
+<table>
+  <tr><th style="width:8%">Phase</th><th style="width:34%">Chapitre CloudQuest</th><th>Ce que vous construisez</th><th style="width:14%">Durée indicative</th></tr>
+  <tr><td>1</td><td>L'entrepôt infini (S3)</td><td>Buckets, objets, préfixes, métadonnées, versioning, cycle de vie, URL pré-signée, politique de bucket</td><td>3 h</td></tr>
+  <tr><td>2</td><td>Le registre éclair (DynamoDB)</td><td>Tables, clés simples et composées, index secondaire, requêtes, TTL</td><td>3 h</td></tr>
+  <tr><td>3</td><td>Le tapis roulant (SQS)</td><td>Files, envoi et réception, délai de visibilité, DLQ, file FIFO</td><td>2 h 30</td></tr>
+  <tr><td>4</td><td>Projet final</td><td>Le worker Go qui relie les trois services, puis sa résistance aux données toxiques</td><td>4 h</td></tr>
+</table>
+
+<div class="box rule"><strong>Règle du jeu.</strong> Chaque défi de l'application propose un <em>parcours guidé</em> : une explication de ce qu'il faut obtenir, puis des indices du plus vague au plus précis. Un indice coûte 10 % des points du défi (plancher : 40 %). Aucun indice ne donne la commande complète : la solution, c'est vous qui l'écrivez. La vérification interroge les vrais services, les essais sont illimités.</div>
+
+<div class="box warn"><strong>Ce qui est évalué.</strong> Pas seulement « ça marche ». Vous devez pouvoir <em>expliquer</em> chaque choix : c'est l'objet des questions de ce cahier. Une réponse copiée sans justification ne rapporte aucun point.</div>
+
+<h2>2.3 Méthode conseillée pour chaque défi</h2>
+<ol>
+  <li><strong>Lire</strong> le récit et l'objectif : que doit-on observer à la fin ?</li>
+  <li><strong>Chercher</strong> dans la documentation officielle liée au défi (colonne de droite) le nom de l'opération utile.</li>
+  <li><strong>Essayer</strong>, lire le message d'erreur en entier, corriger.</li>
+  <li><strong>Vérifier</strong> dans l'application ; si un point est rouge, son détail indique quoi regarder.</li>
+  <li>En dernier recours, <strong>révéler un indice</strong>, un seul à la fois.</li>
+  <li><strong>Noter</strong> dans ce cahier la commande ou le code retenu et ce que vous avez compris.</li>
+</ol>
+
+<h1>3. Phase 1 — Stockage objet (S3 / MinIO)</h1>
+<p>Objectif : remplacer le partage de fichiers par un stockage objet. À la fin de la phase, le bucket <code>livrexpress-factures</code> existe, est organisé par préfixes et protégé par le versioning.</p>
+
+<div class="step"><h3><span class="n">1</span>Comprendre le modèle</h3>
+<p>Avant toute commande, repérez dans la documentation ce qui distingue un <em>bucket</em>, un <em>objet</em> et une <em>clé</em>. Créez votre premier bucket avec l'outil de votre choix, puis observez-le avec un <strong>autre</strong> outil.</p>
+<p class="small">Piste : l'AWS CLI contacte le vrai AWS si on ne lui précise pas où se trouve le service.</p></div>
+
+<div class="step"><h3><span class="n">2</span>Organiser et décrire</h3>
+<p>Déposez plusieurs factures sous une arborescence par année et par mois, puis listez uniquement celles d'un mois donné. Ajoutez à un objet un type de contenu et une métadonnée personnalisée.</p>
+<p class="small">Piste : comparez le résultat d'un listage avec et sans délimiteur.</p></div>
+
+<div class="step"><h3><span class="n">3</span>Protéger et partager</h3>
+<p>Activez le versioning, provoquez un « accident », restaurez. Programmez le nettoyage automatique d'un préfixe temporaire. Générez un lien de téléchargement valable quelques minutes.</p>
+<p class="small">Piste : après une suppression, listez les <em>versions</em> de l'objet, pas seulement les objets.</p></div>
+
+<h2>Questions — phase 1</h2>
+<p class="q"><strong>Q1.</strong> Un collègue affirme : « S3, c'est un disque dur dans le cloud. » Donnez deux différences concrètes entre un système de fichiers et un stockage objet.</p><div class="lines"></div><div class="lines"></div><div class="lines"></div>
+<p class="q"><strong>Q2.</strong> Vous avez listé les objets du préfixe <code>factures/2026/10/</code>. Ce « dossier » existe-t-il réellement ? Justifiez à partir de ce que vous avez observé.</p><div class="lines"></div><div class="lines"></div>
+<p class="q"><strong>Q3.</strong> Après la suppression d'une facture dans un bucket versionné, combien de versions voyez-vous et de quelle nature ? Que faudrait-il faire pour la supprimer définitivement ?</p><div class="lines"></div><div class="lines"></div><div class="lines"></div>
+<p class="q"><strong>Q4.</strong> Le service client veut envoyer une facture à un client. Comparez trois solutions : pièce jointe, bucket public, URL pré-signée. Laquelle recommandez-vous et pourquoi ?</p><div class="lines"></div><div class="lines"></div><div class="lines"></div>
+<p class="q"><strong>Q5.</strong> Le versioning conserve toutes les anciennes versions. Quel est le risque à long terme et quel mécanisme vu dans cette phase permet de le maîtriser ?</p><div class="lines"></div><div class="lines"></div>
+
+<h1>4. Phase 2 — Base NoSQL (DynamoDB)</h1>
+<p>Objectif : stocker les commandes dans une table dont les temps de réponse ne dépendent pas du volume. À la fin de la phase, la table <code>Commandes</code> existe et vous savez l'interroger efficacement.</p>
+
+<div class="box"><strong>Changement de méthode.</strong> En SQL, on modélise les données puis on écrit les requêtes. En DynamoDB, on fait l'inverse : on liste d'abord les <em>accès</em> dont l'application a besoin, puis on choisit les clés qui les rendent possibles.</div>
+
+<div class="step"><h3><span class="n">1</span>Lister les accès</h3>
+<p>Avant de créer quoi que ce soit, complétez ce tableau pour LivrExpress.</p>
+<table><tr><th>Besoin de l'application</th><th style="width:30%">Table</th><th style="width:30%">Clé(s) utilisée(s)</th></tr>
+<tr><td>Retrouver une commande par son identifiant</td><td></td><td></td></tr>
+<tr><td>Lister toutes les étapes de livraison d'un colis, dans l'ordre</td><td></td><td></td></tr>
+<tr><td>Lister les commandes en attente</td><td></td><td></td></tr></table></div>
+
+<div class="step"><h3><span class="n">2</span>Créer, écrire, lire</h3>
+<p>Créez la table, insérez quelques commandes, relisez-en une par sa clé. Observez le format JSON « typé » des attributs.</p>
+<p class="small">Piste : seuls les attributs de clé se déclarent à la création ; les autres sont libres.</p></div>
+
+<div class="step"><h3><span class="n">3</span>Interroger sans tout parcourir</h3>
+<p>Répondez à une question métier de deux façons : en parcourant toute la table, puis en ciblant une partition. Comparez le nombre d'éléments <em>examinés</em> et <em>renvoyés</em>.</p>
+<p class="small">Piste : la réponse de l'API contient deux compteurs distincts.</p></div>
+
+<h2>Questions — phase 2</h2>
+<p class="q"><strong>Q6.</strong> Expliquez avec vos mots la différence entre <code>Query</code> et <code>Scan</code>. Sur une table de 50 millions d'éléments, laquelle est acceptable en production et pourquoi ?</p><div class="lines"></div><div class="lines"></div><div class="lines"></div>
+<p class="q"><strong>Q7.</strong> Pourquoi la table des livraisons a-t-elle besoin d'une clé de tri alors que la table des commandes n'en a pas ?</p><div class="lines"></div><div class="lines"></div>
+<p class="q"><strong>Q8.</strong> Vous avez créé un index secondaire global sur le statut. Que coûte un index (stockage, écritures) ? Le statut est-il un bon choix de clé de partition si 95 % des commandes sont « LIVREE » ?</p><div class="lines"></div><div class="lines"></div><div class="lines"></div>
+<p class="q"><strong>Q9.</strong> Citez un besoin de LivrExpress pour lequel une base relationnelle resterait un meilleur choix que DynamoDB. Justifiez.</p><div class="lines"></div><div class="lines"></div>
+<p class="q"><strong>Q10.</strong> À quoi sert le TTL sur la table des sessions ? L'expiration est-elle immédiate ? Quelle précaution cela impose-t-il au code qui lit la table ?</p><div class="lines"></div><div class="lines"></div>
+
+<h1>5. Phase 3 — Files de messages (SQS)</h1>
+<p>Objectif : découpler le site web du traitement. À la fin de la phase, la file <code>commandes-entrantes</code> existe et vous maîtrisez le cycle recevoir → traiter → supprimer.</p>
+
+<div class="step"><h3><span class="n">1</span>Envoyer, recevoir… et recevoir encore</h3>
+<p>Envoyez un message, recevez-le <strong>sans le supprimer</strong>, puis tentez de le recevoir à nouveau immédiatement, et encore une minute plus tard. Notez ce que vous observez à chaque fois.</p></div>
+
+<div class="step"><h3><span class="n">2</span>Isoler les messages toxiques</h3>
+<p>Créez une file de quarantaine et reliez-la à la file principale. Faites échouer volontairement un message assez de fois pour qu'il y bascule.</p>
+<p class="small">Piste : la liaison se configure sur la file <em>source</em>, pas sur la file de quarantaine.</p></div>
+
+<div class="step"><h3><span class="n">3</span>Garantir l'ordre</h3>
+<p>Comparez une file standard et une file FIFO en envoyant une séquence numérotée. Observez le rôle du groupe de messages et de l'identifiant de déduplication.</p></div>
+
+<h2>Questions — phase 3</h2>
+<p class="q"><strong>Q11.</strong> Reprenez l'incident du vendredi noir. Expliquez précisément en quoi une file entre le site et la base aurait évité la perte des 1 312 commandes.</p><div class="lines"></div><div class="lines"></div><div class="lines"></div>
+<p class="q"><strong>Q12.</strong> Qu'est-ce que le délai de visibilité ? Que se passe-t-il s'il est plus court que la durée du traitement ? Et s'il est beaucoup trop long ?</p><div class="lines"></div><div class="lines"></div><div class="lines"></div>
+<p class="q"><strong>Q13.</strong> Une file standard garantit une livraison « au moins une fois ». Quelle conséquence pour le code du consommateur ?</p><div class="lines"></div><div class="lines"></div>
+<p class="q"><strong>Q14.</strong> Pour les paiements, l'équipe hésite entre file standard et FIFO. Donnez un argument pour chacune, puis tranchez.</p><div class="lines"></div><div class="lines"></div><div class="lines"></div>
+
+<h1>6. Phase 4 — Projet final : le worker</h1>
+
+<div class="box story">« Jour J. Le site va publier de vraies commandes dans la file. Ton programme les lit, les enregistre, dépose un reçu, et ne perd rien. Même si on le coupe au milieu. » — Karim</div>
+
+<h2>6.1 Cahier des charges</h2>
+<p>Le squelette se trouve dans <code>projet/pipeline/main.go</code>. Les connexions aux trois services sont écrites ; la boucle principale et l'ordre des opérations aussi. Vous écrivez les fonctions marquées <code>TODO</code>.</p>
+<table>
+  <tr><th style="width:8%">Réf.</th><th>Exigence</th><th style="width:30%">Contrôle dans CloudQuest</th></tr>
+  <tr><td>E1</td><td>Chaque message de <code>commandes-entrantes</code> est décodé en une commande (<code>commandeId</code>, <code>client</code>, <code>montant</code>, <code>ville</code>).</td><td rowspan="4">Défi « Mise en production du worker »</td></tr>
+  <tr><td>E2</td><td>La commande est écrite dans la table <code>Commandes</code> avec le statut <code>TRAITEE</code>.</td></tr>
+  <tr><td>E3</td><td>Un reçu JSON contenant au moins <code>commandeId</code> est déposé sous <code>recus/&lt;commandeId&gt;.json</code> dans <code>livrexpress-factures</code>.</td></tr>
+  <tr><td>E4</td><td>Le message n'est supprimé qu'après le succès de E2 <strong>et</strong> E3. À la fin, la file est vide.</td></tr>
+  <tr><td>E5</td><td>Un message dont le corps n'est pas un JSON valide, ou dont le montant est ≤ 0, n'est ni enregistré ni supprimé.</td><td rowspan="3">Défi « Résister aux données toxiques »</td></tr>
+  <tr><td>E6</td><td><code>commandes-entrantes</code> est reliée à <code>commandes-entrantes-dlq</code> (5 réceptions au plus) ; les messages rejetés y aboutissent.</td></tr>
+  <tr><td>E7</td><td>Un message défectueux n'interrompt jamais le programme : les commandes valides du même lot sont traitées.</td></tr>
+</table>
+
+<h2>6.2 Parcours guidé</h2>
+<div class="step"><h3><span class="n">1</span>Lire avant d'écrire</h3>
+<p>Lancez le programme tel quel : <code>go run ./projet/pipeline</code>. Que vous dit-il ? Lisez ensuite <code>main()</code> et <code>traiter()</code> : dessinez sur papier le chemin d'un message, avec les deux sorties possibles (succès, rejet).</p></div>
+<div class="step"><h3><span class="n">2</span>Recevoir et décoder</h3>
+<p>Écrivez <code>recevoir</code> puis <code>decoder</code>. Affichez simplement chaque commande décodée, sans rien écrire ailleurs. Relancez : que deviennent les messages entre deux exécutions ? Pourquoi ?</p></div>
+<div class="step"><h3><span class="n">3</span>Enregistrer</h3>
+<p>Écrivez <code>enregistrer</code>. Vérifiez dans la table, avec la CLI, qu'une commande apparaît avec tous ses attributs et le bon statut. Lancez le programme deux fois : combien d'éléments pour une même commande ?</p></div>
+<div class="step"><h3><span class="n">4</span>Déposer le reçu</h3>
+<p>Écrivez <code>deposerRecu</code>. Vérifiez l'objet dans la console MinIO : sa clé, son contenu, son type.</p></div>
+<div class="step"><h3><span class="n">5</span>Acquitter</h3>
+<p>Écrivez <code>acquitter</code> en dernier. Cliquez « Envoyer les commandes du jour » dans l'application, lancez le worker, vérifiez.</p></div>
+<div class="step"><h3><span class="n">6</span>Résister</h3>
+<p>Écrivez <code>valider</code>, complétez <code>rejeter</code>, branchez la DLQ. Cliquez « Envoyer un lot piégé ». Mesurez le temps que met un message toxique à atteindre la quarantaine, puis cherchez comment le réduire.</p></div>
+
+<div class="box"><strong>Expérience obligatoire — la coupure.</strong> Ajoutez temporairement une pause de quelques secondes entre l'écriture DynamoDB et le dépôt S3. Lancez le worker et interrompez-le (<code>Ctrl+C</code>) pendant la pause. Relancez-le. Observez l'état de la table, du bucket et de la file, et reportez vos observations à la question Q16.</div>
+
+<h2>Questions — phase 4</h2>
+<p class="q"><strong>Q15.</strong> Pourquoi l'ordre « enregistrer → déposer le reçu → supprimer le message » est-il imposé ? Que risquerait-on en supprimant le message en premier ?</p><div class="lines"></div><div class="lines"></div><div class="lines"></div>
+<p class="q"><strong>Q16.</strong> Décrivez ce que vous avez observé lors de l'expérience de la coupure. Votre traitement est-il idempotent ? Quel choix de conception le garantit ?</p><div class="lines"></div><div class="lines"></div><div class="lines"></div><div class="lines"></div>
+<p class="q"><strong>Q17.</strong> Pendant les soldes, le volume triple. Que change-t-on dans cette architecture pour suivre la charge ? Qu'est-ce qui ne change pas ?</p><div class="lines"></div><div class="lines"></div><div class="lines"></div>
+<p class="q"><strong>Q18.</strong> Deux messages toxiques sont en DLQ lundi matin. Décrivez la procédure que l'équipe d'exploitation devrait suivre.</p><div class="lines"></div><div class="lines"></div><div class="lines"></div>
+<p class="q"><strong>Q19.</strong> Listez tout ce qu'il faudrait modifier pour faire tourner ce worker sur le vrai AWS (code, configuration, identifiants, droits).</p><div class="lines"></div><div class="lines"></div><div class="lines"></div>
+<p class="q"><strong>Q20.</strong> Synthèse (10 lignes). Reprenez le tableau « Problème constaté / Besoin » de la section 1.1 et indiquez, pour chaque ligne, le service et la fonctionnalité précise qui y répond.</p><div class="lines"></div><div class="lines"></div><div class="lines"></div><div class="lines"></div><div class="lines"></div><div class="lines"></div>
+
+<h1>7. Livrables et barème</h1>
+<h2>7.1 À rendre</h2>
+<ul>
+  <li>Le fichier <code>projet/pipeline/main.go</code> complété, qui compile (<code>go build ./...</code>).</li>
+  <li>Ce cahier, avec les réponses aux questions Q1 à Q20.</li>
+  <li>Une capture de votre tableau de bord CloudQuest (grade et points).</li>
+  <li>Un court fichier <code>NOTES.md</code> : les commandes clés utilisées à chaque phase et les difficultés rencontrées.</li>
+</ul>
+<h2>7.2 Barème indicatif (sur 20)</h2>
+<table>
+  <tr><th>Élément</th><th style="width:14%">Points</th><th>Critères</th></tr>
+  <tr><td>Défis CloudQuest, chapitres 1 à 3</td><td>6</td><td>Proportionnel aux points obtenus (les indices révélés réduisent le score).</td></tr>
+  <tr><td>Projet — exigences E1 à E4</td><td>4</td><td>Défi « Mise en production » validé ; code lisible, erreurs traitées.</td></tr>
+  <tr><td>Projet — exigences E5 à E7</td><td>3</td><td>Défi « Données toxiques » validé ; aucun arrêt brutal du programme.</td></tr>
+  <tr><td>Questions Q1 à Q20</td><td>6</td><td>Justesse, justification par l'observation, vocabulaire précis.</td></tr>
+  <tr><td>Notes et soin du rendu</td><td>1</td><td>Clarté, commandes reproductibles.</td></tr>
+</table>
+<h2>7.3 Pour aller plus loin (facultatif)</h2>
+<ul>
+  <li>Lancer deux workers en parallèle : les commandes sont-elles traitées en double ? Pourquoi ?</li>
+  <li>Écrire un second programme qui vide la DLQ et produit un rapport des messages rejetés dans S3.</li>
+  <li>Remplacer l'écriture simple dans DynamoDB par une écriture conditionnelle qui refuse d'écraser une commande déjà traitée.</li>
+  <li>Stocker dans l'élément DynamoDB la clé S3 du reçu, puis générer une URL pré-signée à partir d'un <code>commandeId</code>.</li>
+</ul>
+<h2>7.4 Glossaire</h2>
+<table>
+  <tr><td style="width:26%"><strong>Bucket</strong></td><td>Conteneur d'objets S3, au nom unique.</td></tr>
+  <tr><td><strong>Clé / préfixe</strong></td><td>Nom complet d'un objet ; début commun à plusieurs clés, utilisé comme « dossier » logique.</td></tr>
+  <tr><td><strong>Clé de partition / de tri</strong></td><td>Attributs qui identifient un élément DynamoDB et déterminent son emplacement et son ordre.</td></tr>
+  <tr><td><strong>GSI</strong></td><td>Index secondaire global : une autre « vue » de la table avec des clés différentes.</td></tr>
+  <tr><td><strong>Délai de visibilité</strong></td><td>Durée pendant laquelle un message reçu est masqué aux autres consommateurs.</td></tr>
+  <tr><td><strong>DLQ</strong></td><td>File de quarantaine recevant les messages qui ont échoué trop de fois.</td></tr>
+  <tr><td><strong>Idempotence</strong></td><td>Propriété d'un traitement que l'on peut rejouer sans changer le résultat.</td></tr>
+  <tr><td><strong>Endpoint</strong></td><td>Adresse réseau de l'API d'un service.</td></tr>
+</table>
+
+</body>
+</html>
