@@ -1,0 +1,65 @@
+# CloudQuest — services "AWS" émulés en local.
+# Les ports sont volontairement décalés (9100, 8100, 9324…) pour ne pas
+# entrer en conflit avec une autre instance MinIO déjà présente sur 9000.
+name: cloudquest
+
+services:
+  # S3  ->  MinIO
+  minio:
+    image: bitnamilegacy/minio:2025.4.22
+    container_name: cq-minio
+    environment:
+      MINIO_ROOT_USER: ${CQ_ACCESS_KEY:-cloudquest}
+      MINIO_ROOT_PASSWORD: ${CQ_SECRET_KEY:-cloudquest-secret}
+    ports:
+      - "127.0.0.1:9100:9000"   # API S3
+      - "127.0.0.1:9101:9001"   # Console web
+    volumes:
+      - minio-data:/bitnami/minio/data
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      retries: 20
+
+  # DynamoDB  ->  DynamoDB Local (image officielle AWS)
+  dynamodb:
+    image: amazon/dynamodb-local:2.5.4
+    container_name: cq-dynamodb
+    command: ["-jar", "DynamoDBLocal.jar", "-sharedDb", "-inMemory"]
+    ports:
+      - "127.0.0.1:8100:8000"
+
+  # SQS  ->  ElasticMQ (compatible API SQS)
+  sqs:
+    image: softwaremill/elasticmq-native:1.6.11
+    container_name: cq-sqs
+    ports:
+      - "127.0.0.1:9324:9324"   # API SQS
+      - "127.0.0.1:9325:9325"   # Interface web des files
+
+  # Client MinIO (mc) prêt à l'emploi :
+  #   docker compose run --rm mc ls local
+  mc:
+    image: bitnamilegacy/minio-client:2025.4.16
+    profiles: ["tools"]
+    network_mode: host
+    environment:
+      MINIO_SERVER_HOST: 127.0.0.1
+    entrypoint: ["/bin/bash", "-c", "mc alias set local http://127.0.0.1:9100 ${CQ_ACCESS_KEY:-cloudquest} ${CQ_SECRET_KEY:-cloudquest-secret} >/dev/null && mc \"$$@\"", "--"]
+
+  # AWS CLI officielle, déjà configurée pour parler aux émulateurs :
+  #   docker compose run --rm aws s3 ls --endpoint-url http://127.0.0.1:9100
+  aws:
+    image: amazon/aws-cli:2.27.0
+    profiles: ["tools"]
+    network_mode: host
+    working_dir: /work
+    volumes:
+      - ./:/work
+    environment:
+      AWS_ACCESS_KEY_ID: ${CQ_ACCESS_KEY:-cloudquest}
+      AWS_SECRET_ACCESS_KEY: ${CQ_SECRET_KEY:-cloudquest-secret}
+      AWS_DEFAULT_REGION: us-east-1
+
+volumes:
+  minio-data:
