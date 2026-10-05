@@ -27,15 +27,15 @@
 <main>
 {{template "content" .}}
 </main>
-<footer>CloudQuest — apprendre S3, DynamoDB et SQS en local avec MinIO, DynamoDB Local et ElasticMQ.</footer>
+<footer>CloudQuest — apprendre S3, DynamoDB et SQS{{if not .Hosted}} en local{{end}} avec MinIO, DynamoDB Local et ElasticMQ.{{if .Teacher}} · <a href="/formateur">Espace formateur</a>{{end}}</footer>
 </body>
 </html>
 
 {{define "health"}}
 <div class="health {{if .AllUp}}up{{else}}down{{end}}">
-  <span class="{{if index .Health "s3"}}ok{{else}}ko{{end}}">MinIO (S3) :9100</span>
-  <span class="{{if index .Health "dynamodb"}}ok{{else}}ko{{end}}">DynamoDB Local :8100</span>
-  <span class="{{if index .Health "sqs"}}ok{{else}}ko{{end}}">ElasticMQ (SQS) :9324</span>
-  {{if not .AllUp}}<p>Un émulateur ne répond pas. Lancez <code>docker compose up -d</code> à la racine du projet.</p>{{end}}
+  <span class="{{if index .Health "s3"}}ok{{else}}ko{{end}}">MinIO (S3){{if not .Hosted}} :9100{{end}}</span>
+  <span class="{{if index .Health "dynamodb"}}ok{{else}}ko{{end}}">DynamoDB Local{{if not .Hosted}} :8100{{end}}</span>
+  <span class="{{if index .Health "sqs"}}ok{{else}}ko{{end}}">ElasticMQ (SQS){{if not .Hosted}} :9324{{end}}</span>
+  {{if not .AllUp}}<p>Un émulateur ne répond pas. {{if .Hosted}}Prévenez votre formateur.{{else}}Lancez <code>docker compose up -d</code> à la racine du projet.{{end}}</p>{{end}}
 </div>
 {{end}}

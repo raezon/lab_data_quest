@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -28,21 +29,54 @@ type Config struct {
 	AccessKey      string
 	SecretKey      string
 	Region         string
+
+	// Mode plateforme partagée (une instance pour toute une classe).
+	// Les adresses publiques sont celles que les étudiants utilisent depuis
+	// leur poste ; le jeu, lui, garde les adresses internes ci-dessus.
+	Hosted        bool
+	S3Public      string
+	DynamoPublic  string
+	SQSPublic     string
+	StudentKey    string // identifiants communiqués aux étudiants
+	StudentSecret string
 }
 
 // ConfigFromEnv lit la configuration depuis l'environnement, avec des
 // valeurs par défaut alignées sur docker-compose.yml.
 func ConfigFromEnv() Config {
-	return Config{
+	c := Config{
 		S3Endpoint:     env("CQ_S3_ENDPOINT", "http://127.0.0.1:9100"),
-		S3Console:      env("CQ_S3_CONSOLE", "http://127.0.0.1:9101"),
+		S3Console:      optional(env("CQ_S3_CONSOLE", "http://127.0.0.1:9101")),
 		DynamoEndpoint: env("CQ_DYNAMO_ENDPOINT", "http://127.0.0.1:8100"),
 		SQSEndpoint:    env("CQ_SQS_ENDPOINT", "http://127.0.0.1:9324"),
-		SQSConsole:     env("CQ_SQS_CONSOLE", "http://127.0.0.1:9325"),
+		SQSConsole:     optional(env("CQ_SQS_CONSOLE", "http://127.0.0.1:9325")),
 		AccessKey:      env("CQ_ACCESS_KEY", "cloudquest"),
 		SecretKey:      env("CQ_SECRET_KEY", "cloudquest-secret"),
 		Region:         env("CQ_REGION", "us-east-1"),
+		Hosted:         os.Getenv("CQ_MULTI") == "1",
 	}
+	c.S3Public = strings.TrimRight(env("CQ_S3_PUBLIC", c.S3Endpoint), "/")
+	c.DynamoPublic = strings.TrimRight(env("CQ_DYNAMO_PUBLIC", c.DynamoEndpoint), "/")
+	c.SQSPublic = strings.TrimRight(env("CQ_SQS_PUBLIC", c.SQSEndpoint), "/")
+	c.StudentKey = env("CQ_STUDENT_ACCESS_KEY", c.AccessKey)
+	c.StudentSecret = env("CQ_STUDENT_SECRET_KEY", c.SecretKey)
+	return c
+}
+
+// optional permet de masquer une interface web non exposée (valeur « none »).
+func optional(v string) string {
+	if v == "none" {
+		return ""
+	}
+	return v
+}
+
+// Display renvoie la configuration telle qu'on la montre aux étudiants :
+// adresses publiques et identifiants étudiants.
+func (c Config) Display() Config {
+	c.S3Endpoint, c.DynamoEndpoint, c.SQSEndpoint = c.S3Public, c.DynamoPublic, c.SQSPublic
+	c.AccessKey, c.SecretKey = c.StudentKey, c.StudentSecret
+	return c
 }
 
 func env(k, def string) string {
@@ -59,6 +93,32 @@ type Clients struct {
 	Dynamo *dynamodb.Client
 	SQS    *sqs.Client
 	HTTP   *http.Client
+	// Suffix distingue les ressources d'un·e étudiant·e sur une plateforme
+	// partagée (vide en local : les noms du jeu sont utilisés tels quels).
+	Suffix string
+}
+
+// For renvoie une vue des clients dédiée à un suffixe d'étudiant·e.
+func (c *Clients) For(suffix string) *Clients {
+	cp := *c
+	cp.Suffix = suffix
+	return &cp
+}
+
+// N renvoie le nom réel d'une ressource (bucket, table, file) pour
+// l'étudiant·e courant·e : « commandes-entrantes » devient
+// « commandes-entrantes-amina », « paiements.fifo » « paiements-amina.fifo ».
+func (c *Clients) N(name string) string { return Suffixed(name, c.Suffix) }
+
+// Suffixed applique un suffixe d'étudiant·e à un nom de ressource.
+func Suffixed(name, suffix string) string {
+	if suffix == "" {
+		return name
+	}
+	if base, ok := strings.CutSuffix(name, ".fifo"); ok {
+		return base + "-" + suffix + ".fifo"
+	}
+	return name + "-" + suffix
 }
 
 // New crée les clients SDK.

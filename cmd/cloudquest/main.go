@@ -27,7 +27,16 @@ func main() {
 	if err != nil {
 		log.Fatalf("ouverture de %s : %v", *data, err)
 	}
-	srv, err := web.New(game.NewCatalog(), store, clients)
+	cat := game.NewCatalog()
+	if clients.Cfg.Hosted {
+		cat.ApplyHosted()
+		log.Print("mode plateforme partagée : comptes avec code secret, ressources suffixées par étudiant·e")
+	}
+	teacher := os.Getenv("CQ_TEACHER_PASSWORD")
+	if teacher != "" {
+		log.Print("espace formateur activé : /formateur")
+	}
+	srv, err := web.New(cat, store, clients, teacher)
 	if err != nil {
 		log.Fatalf("chargement des gabarits : %v", err)
 	}

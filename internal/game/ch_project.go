@@ -75,14 +75,14 @@ func randomOrders(n int) []order {
 }
 
 func checkPrereqs(ctx context.Context, c *cloud.Clients) (string, error) {
-	u, err := queueURL(ctx, c, queueCommandes)
+	u, err := queueURL(ctx, c, c.N(queueCommandes))
 	if err != nil {
 		return "", errors.New("la file commandes-entrantes est introuvable (chapitre 3)")
 	}
-	if _, err := describeTable(ctx, c, tableCommandes); err != nil {
+	if _, err := describeTable(ctx, c, c.N(tableCommandes)); err != nil {
 		return "", errors.New("la table Commandes est introuvable (chapitre 2)")
 	}
-	if err := bucketExists(ctx, c, bucketFactures); err != nil {
+	if err := bucketExists(ctx, c, c.N(bucketFactures)); err != nil {
 		return "", errors.New("le bucket livrexpress-factures est introuvable (chapitre 1)")
 	}
 	return u, nil
@@ -104,7 +104,7 @@ func verifyProcessed(ctx context.Context, c *cloud.Clients, r *report, orders []
 	var badDB, badS3 []string
 	for _, o := range orders {
 		out, err := c.Dynamo.GetItem(ctx, &dynamodb.GetItemInput{
-			TableName: aws.String(tableCommandes),
+			TableName: aws.String(c.N(tableCommandes)),
 			Key:       map[string]dtypes.AttributeValue{"commandeId": &dtypes.AttributeValueMemberS{Value: o.CommandeID}},
 		})
 		if err == nil && out.Item != nil {
@@ -119,7 +119,7 @@ func verifyProcessed(ctx context.Context, c *cloud.Clients, r *report, orders []
 		} else {
 			badDB = append(badDB, o.CommandeID)
 		}
-		b, _, err := getObject(ctx, c, bucketFactures, "recus/"+o.CommandeID+".json")
+		b, _, err := getObject(ctx, c, c.N(bucketFactures), "recus/"+o.CommandeID+".json")
 		var doc map[string]any
 		if err == nil && json.Unmarshal(b, &doc) == nil && doc["commandeId"] == o.CommandeID {
 			okS3++
@@ -230,7 +230,7 @@ objet <code>recus/&lt;commandeId&gt;.json</code> (JSON contenant <code>commandeI
 				return r.pending("Commandes en base", "Reçus dans S3", "File commandes-entrantes vide")
 			}
 			verifyProcessed(ctx, c, r, orders)
-			u, err := queueURL(ctx, c, queueCommandes)
+			u, err := queueURL(ctx, c, c.N(queueCommandes))
 			n := -1
 			if err == nil {
 				n, err = pendingCount(ctx, c, u)
@@ -272,7 +272,7 @@ et celles-ci doivent finir en quarantaine pour que l'équipe les analyse.</p>`,
 				if max, _ := strconv.Atoi(fmt.Sprint(rp.Max)); max < 1 || max > 5 {
 					return "", fmt.Errorf("maxReceiveCount vaut %v : choisissez une valeur entre 1 et 5", rp.Max)
 				}
-				dlq, err := queueURL(ctx, c, queueCommandesDLQ)
+				dlq, err := queueURL(ctx, c, c.N(queueCommandesDLQ))
 				if err != nil {
 					return "", errors.New("la file commandes-entrantes-dlq est introuvable")
 				}
@@ -332,7 +332,7 @@ et celles-ci doivent finir en quarantaine pour que l'équipe les analyse.</p>`,
 			leaked := 0
 			for _, o := range bad {
 				out, err := c.Dynamo.GetItem(ctx, &dynamodb.GetItemInput{
-					TableName: aws.String(tableCommandes),
+					TableName: aws.String(c.N(tableCommandes)),
 					Key:       map[string]dtypes.AttributeValue{"commandeId": &dtypes.AttributeValueMemberS{Value: o.CommandeID}},
 				})
 				if err == nil && out.Item != nil {
@@ -340,7 +340,7 @@ et celles-ci doivent finir en quarantaine pour que l'équipe les analyse.</p>`,
 				}
 			}
 			r.ok("Commandes toxiques rejetées (absentes de DynamoDB)", leaked == 0, "%d commande(s) toxique(s) ont été écrites en base", leaked)
-			dlq, err := queueURL(ctx, c, queueCommandesDLQ)
+			dlq, err := queueURL(ctx, c, c.N(queueCommandesDLQ))
 			inDLQ := 0
 			if err == nil {
 				msgs, _ := peek(ctx, c, dlq)
@@ -354,7 +354,7 @@ et celles-ci doivent finir en quarantaine pour que l'équipe les analyse.</p>`,
 				}
 			}
 			r.ok(fmt.Sprintf("Toxiques en quarantaine dans la DLQ (%d/%d)", inDLQ, len(bad)), inDLQ == len(bad), "patientez ou accélérez avec ChangeMessageVisibility")
-			u, _ := queueURL(ctx, c, queueCommandes)
+			u, _ := queueURL(ctx, c, c.N(queueCommandes))
 			n, err := pendingCount(ctx, c, u)
 			r.ok("File principale vide", err == nil && n == 0, "%d message(s) restant(s)", n)
 			return r.items

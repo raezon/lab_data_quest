@@ -9,6 +9,8 @@
 <div>
   <section class="panel story">{{raw .C.Story}}</section>
 
+  {{if .Suffix}}<section class="panel suffix-note">🏷️ Plateforme partagée : vos buckets, tables et files portent votre suffixe personnel <code>-{{.Suffix}}</code>. Les noms affichés sur cette page l'incluent déjà : utilisez-les tels quels.</section>{{end}}
+
   <section class="panel" id="mission">
     <h2>🎯 Objectif</h2>
     <div class="objective">{{raw .C.Objective}}</div>
@@ -93,8 +95,9 @@
       <li>Clé d'accès : <code>{{.Cfg.AccessKey}}</code></li>
       <li>Clé secrète : <code>{{.Cfg.SecretKey}}</code></li>
       <li>Région : <code>{{.Cfg.Region}}</code></li>
-      <li><a href="{{.Cfg.S3Console}}" target="_blank" rel="noopener">Console MinIO ↗</a> <small>(mêmes identifiants)</small></li>
-      <li><a href="{{.Cfg.SQSConsole}}" target="_blank" rel="noopener">Interface ElasticMQ ↗</a></li>
+      {{if .Suffix}}<li>Votre suffixe : <code>-{{.Suffix}}</code></li>{{end}}
+      {{if .Cfg.S3Console}}<li><a href="{{.Cfg.S3Console}}" target="_blank" rel="noopener">Console MinIO ↗</a> <small>(mêmes identifiants)</small></li>{{end}}
+      {{if .Cfg.SQSConsole}}<li><a href="{{.Cfg.SQSConsole}}" target="_blank" rel="noopener">Interface ElasticMQ ↗</a></li>{{end}}
     </ul>
   </div>
 </aside>

@@ -154,7 +154,7 @@ func dynCreateTable() *Challenge {
 		},
 		Check: func(ctx context.Context, c *cloud.Clients, _ string, _ *ChallengeState) []CheckItem {
 			r := &report{}
-			t, err := describeTable(ctx, c, tableCommandes)
+			t, err := describeTable(ctx, c, c.N(tableCommandes))
 			if !r.ok("La table Commandes existe", err == nil, errDetail(err)) {
 				return r.pending("Clé de partition commandeId (S)", "Pas de clé de tri")
 			}
@@ -199,7 +199,7 @@ Utilisez <strong>au moins 2 statuts différents</strong>.`,
 		},
 		Check: func(ctx context.Context, c *cloud.Clients, _ string, _ *ChallengeState) []CheckItem {
 			r := &report{}
-			items, err := scanAll(ctx, c, tableCommandes)
+			items, err := scanAll(ctx, c, c.N(tableCommandes))
 			if !r.ok("La table Commandes est lisible", err == nil, errDetail(err)) {
 				return r.pending("≥ 5 commandes bien formées", "≥ 2 statuts différents")
 			}
@@ -252,7 +252,7 @@ Y insérer <strong>au moins 3</strong> livraisons pour le livreur <code>LIV-007<
 		},
 		Check: func(ctx context.Context, c *cloud.Clients, _ string, _ *ChallengeState) []CheckItem {
 			r := &report{}
-			t, err := describeTable(ctx, c, tableLivraisons)
+			t, err := describeTable(ctx, c, c.N(tableLivraisons))
 			if !r.ok("La table Livraisons existe", err == nil, errDetail(err)) {
 				return r.pending("Clé de partition livreurId (S)", "Clé de tri dateLivraison (S)", "≥ 3 livraisons pour LIV-007")
 			}
@@ -263,7 +263,7 @@ Y insérer <strong>au moins 3</strong> livraisons pour le livreur <code>LIV-007<
 				return r.pending("≥ 3 livraisons pour LIV-007")
 			}
 			out, err := c.Dynamo.Query(ctx, &dynamodb.QueryInput{
-				TableName:                 aws.String(tableLivraisons),
+				TableName:                 aws.String(c.N(tableLivraisons)),
 				KeyConditionExpression:    aws.String("livreurId = :l"),
 				ExpressionAttributeValues: map[string]types.AttributeValue{":l": &types.AttributeValueMemberS{Value: "LIV-007"}},
 				Select:                    types.SelectCount,
@@ -312,7 +312,7 @@ Puis interrogez-le et indiquez combien de commandes sont <code>EN_ATTENTE</code>
 		},
 		Check: func(ctx context.Context, c *cloud.Clients, answer string, _ *ChallengeState) []CheckItem {
 			r := &report{}
-			t, err := describeTable(ctx, c, tableCommandes)
+			t, err := describeTable(ctx, c, c.N(tableCommandes))
 			if !r.ok("La table Commandes existe", err == nil, errDetail(err)) {
 				return r.pending("Index statut-index présent", "Clé de l'index : statut (S)", "Bonne réponse au comptage")
 			}
@@ -330,7 +330,7 @@ Puis interrogez-le et indiquez combien de commandes sont <code>EN_ATTENTE</code>
 				return r.pending("Bonne réponse au comptage")
 			}
 			out, err := c.Dynamo.Query(ctx, &dynamodb.QueryInput{
-				TableName: aws.String(tableCommandes), IndexName: aws.String(gsiStatut),
+				TableName: aws.String(c.N(tableCommandes)), IndexName: aws.String(gsiStatut),
 				KeyConditionExpression:    aws.String("statut = :s"),
 				ExpressionAttributeValues: map[string]types.AttributeValue{":s": &types.AttributeValueMemberS{Value: "EN_ATTENTE"}},
 				Select:                    types.SelectCount,
@@ -413,9 +413,9 @@ est créée et remplie. Une question d'audit personnalisée s'affiche alors : r�
 
 func setupHistorique(ctx context.Context, c *cloud.Clients, st *ChallengeState) (string, error) {
 	// (Re)crée la table pour un jeu de données frais et propre à cet essai.
-	_, _ = c.Dynamo.DeleteTable(ctx, &dynamodb.DeleteTableInput{TableName: aws.String(tableHistorique)})
+	_, _ = c.Dynamo.DeleteTable(ctx, &dynamodb.DeleteTableInput{TableName: aws.String(c.N(tableHistorique))})
 	_, err := c.Dynamo.CreateTable(ctx, &dynamodb.CreateTableInput{
-		TableName:   aws.String(tableHistorique),
+		TableName:   aws.String(c.N(tableHistorique)),
 		BillingMode: types.BillingModePayPerRequest,
 		AttributeDefinitions: []types.AttributeDefinition{
 			{AttributeName: aws.String("client"), AttributeType: types.ScalarAttributeTypeS},
@@ -437,7 +437,7 @@ func setupHistorique(ctx context.Context, c *cloud.Clients, st *ChallengeState) 
 		if len(batch) == 0 {
 			return nil
 		}
-		_, err := c.Dynamo.BatchWriteItem(ctx, &dynamodb.BatchWriteItemInput{RequestItems: map[string][]types.WriteRequest{tableHistorique: batch}})
+		_, err := c.Dynamo.BatchWriteItem(ctx, &dynamodb.BatchWriteItemInput{RequestItems: map[string][]types.WriteRequest{c.N(tableHistorique): batch}})
 		batch = batch[:0]
 		return err
 	}
@@ -508,18 +508,18 @@ et insérer au moins une session dont <code>expireLe</code> est un horodatage Un
 		},
 		Check: func(ctx context.Context, c *cloud.Clients, _ string, _ *ChallengeState) []CheckItem {
 			r := &report{}
-			t, err := describeTable(ctx, c, tableSessions)
+			t, err := describeTable(ctx, c, c.N(tableSessions))
 			if !r.ok("La table SessionsLivreurs existe", err == nil, errDetail(err)) {
 				return r.pending("Clé sessionId (S)", "TTL activé sur expireLe", "Une session expire dans le futur")
 			}
 			h, ht, _, _ := keyOf(t.KeySchema, t.AttributeDefinitions)
 			r.ok("Clé sessionId (S)", h == "sessionId" && ht == "S", "clé actuelle : %s (%s)", h, ht)
-			ttl, err := c.Dynamo.DescribeTimeToLive(ctx, &dynamodb.DescribeTimeToLiveInput{TableName: aws.String(tableSessions)})
+			ttl, err := c.Dynamo.DescribeTimeToLive(ctx, &dynamodb.DescribeTimeToLiveInput{TableName: aws.String(c.N(tableSessions))})
 			okTTL := err == nil && ttl.TimeToLiveDescription != nil &&
 				ttl.TimeToLiveDescription.TimeToLiveStatus == types.TimeToLiveStatusEnabled &&
 				aws.ToString(ttl.TimeToLiveDescription.AttributeName) == "expireLe"
 			r.ok("TTL activé sur expireLe", okTTL, "TTL désactivé ou sur un autre attribut")
-			items, err := scanAll(ctx, c, tableSessions)
+			items, err := scanAll(ctx, c, c.N(tableSessions))
 			future, wrongType := false, false
 			now := float64(time.Now().Unix())
 			for _, it := range items {

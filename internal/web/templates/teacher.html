@@ -1,0 +1,106 @@
+{{define "content"}}
+{{if not .Authed}}
+<section class="hero">
+  <h1>🎓 Espace formateur</h1>
+  <p class="lead">Scores et progression de tous les étudiants de cette instance.</p>
+  <form class="login" method="post" action="/formateur/login">
+    <label for="password">Mot de passe formateur</label>
+    <div class="row">
+      <input id="password" name="password" type="password" required autofocus autocomplete="current-password">
+      <button class="primary">Entrer</button>
+    </div>
+    {{if .BadLogin}}<div class="alert bad">Mot de passe incorrect.</div>{{end}}
+  </form>
+</section>
+{{else}}
+<div class="teacher-head">
+  <h1>🎓 Scores de la classe</h1>
+  <div class="actions">
+    {{if .Auto}}<a class="secondary small" href="/formateur">⏸ Arrêter l'actualisation</a>
+    {{else}}<a class="secondary small" href="/formateur?auto=1">🔄 Actualiser toutes les 30 s</a>{{end}}
+    <a class="secondary small" href="/formateur/scores.csv">⬇ Export CSV</a>
+    <form method="post" action="/formateur/logout"><button class="secondary small">Quitter</button></form>
+  </div>
+</div>
+<p class="meta">État au {{when .Generated}} · {{.MaxXP}} XP au maximum · un indice révélé coûte 10 % des points du défi.</p>
+{{if .Notice}}<div class="alert info">{{.Notice}}</div>{{end}}
+
+<section class="grid four">
+  <div class="tile stat"><b>{{.Count}}</b><span>étudiant·e·s inscrit·e·s</span></div>
+  <div class="tile stat"><b>{{.Active}}</b><span>ont marqué des points</span></div>
+  <div class="tile stat"><b>{{.AvgXP}} XP</b><span>score moyen ({{.AvgPct}} %)</span></div>
+  <div class="tile stat"><b>{{.Finished}}</b><span>ont réussi tous les défis</span></div>
+</section>
+
+<h2>Classement détaillé</h2>
+<div class="panel">
+{{if .Rows}}
+<table class="board scores">
+  <tr><th>#</th><th>Étudiant·e</th><th>XP</th><th>Progression</th>
+    {{range .Chapters}}<th title="{{.Title}}">{{.Icon}} {{.Service}}</th>{{end}}
+    <th>Quiz</th><th>Indices</th><th>Essais</th><th>Dernière activité</th></tr>
+  {{range .Rows}}
+  <tr>
+    <td>{{.Pos}}</td>
+    <td><a href="#e-{{.Player.ID}}{{if not .Player.ID}}{{.Key}}{{end}}"><b>{{.Player.Name}}</b></a><small>{{.Rank.Icon}} {{.Rank.Name}}</small></td>
+    <td><b class="xp-badge">{{.XP}}</b></td>
+    <td class="prog"><div class="bar"><i style="width:{{.Pct}}%"></i></div><small>{{.Done}}/{{.Total}} défis · {{.Pct}} %</small></td>
+    {{range .Chapters}}<td class="{{if eq .Done .Total}}full{{end}}">{{.Done}}/{{.Total}}<small>{{.XP}} XP</small></td>{{end}}
+    <td>{{.QuizRight}}/{{.QuizDone}}<small>sur {{.QuizTotal}}</small></td>
+    <td>{{.Hints}}</td><td>{{.Attempts}}</td><td>{{when .Last}}</td>
+  </tr>
+  {{end}}
+</table>
+{{else}}<p>Aucun compte pour l'instant.</p>{{end}}
+</div>
+
+{{if .Rows}}
+<h2>Réussite par défi <small>où la classe bloque-t-elle ?</small></h2>
+<div class="panel">
+<table class="board scores">
+  <tr><th>Défi</th><th>Points</th><th>Commencé par</th><th>Réussi par</th><th>Taux</th><th>Indices (moy.)</th><th>Essais (moy.)</th><th>XP obtenus (moy.)</th></tr>
+  {{range .Stats}}
+  <tr>
+    <td>{{.Challenge.Chapter.Icon}} {{.Challenge.Title}}</td><td>{{.Challenge.XP}}</td>
+    <td>{{.Started}}</td><td>{{.Done}}</td>
+    <td class="prog"><div class="bar"><i style="width:{{.Pct}}%"></i></div><small>{{.Pct}} %</small></td>
+    <td>{{f1 .AvgHints}}</td><td>{{f1 .AvgAttempts}}</td><td>{{if .Done}}{{.AvgXP}}{{else}}—{{end}}</td>
+  </tr>
+  {{end}}
+</table>
+</div>
+
+<h2>Fiche par étudiant·e</h2>
+{{range .Rows}}
+<details class="panel fiche" id="e-{{.Player.ID}}{{if not .Player.ID}}{{.Key}}{{end}}">
+  <summary><b>{{.Player.Name}}</b> — {{.XP}} XP · {{.Done}}/{{.Total}} défis · quiz {{.QuizRight}}/{{.QuizTotal}}
+    {{if .Player.ID}}<small>suffixe des ressources : <code>-{{.Player.ID}}</code></small>{{end}}</summary>
+  <p class="meta">Inscription : {{when .Player.Created}} · dernière activité : {{when .Last}}{{if $.Hosted}}{{if not .Player.PinHash}} · code secret à choisir à la prochaine connexion{{end}}{{end}}</p>
+  <table class="board scores">
+    <tr><th>Défi</th><th>État</th><th>XP</th><th>Indices</th><th>Essais</th><th>Réussi le</th></tr>
+    {{range .Challenges}}
+    <tr class="{{if .State.Done}}ok{{else if not .Started}}idle{{end}}">
+      <td>{{.Challenge.Chapter.Icon}} {{.Challenge.Title}}</td>
+      <td>{{if .State.Done}}✅ réussi{{else if .Started}}⏳ en cours{{else}}—{{end}}</td>
+      <td>{{if .State.Done}}{{.State.XPEarned}}{{else}}0{{end}} / {{.Challenge.XP}}</td>
+      <td>{{.State.HintCount}} / {{.Challenge.TotalHints}}</td><td>{{.State.Attempts}}</td><td>{{when .State.DoneAt}}</td>
+    </tr>
+    {{end}}
+    {{range .Chapters}}
+    <tr class="quizrow"><td>{{.Chapter.Icon}} Quiz — {{.Chapter.Service}}</td>
+      <td>{{if eq .QuizDone .QuizTotal}}✅ terminé{{else if .QuizDone}}⏳ en cours{{else}}—{{end}}</td>
+      <td colspan="4">{{.QuizRight}} bonne(s) réponse(s) sur {{.QuizDone}} répondue(s) · {{.QuizTotal}} questions</td></tr>
+    {{end}}
+  </table>
+  <div class="actions">
+    {{if $.Hosted}}<form method="post" action="/formateur/code" onsubmit="return confirm('Réinitialiser le code secret de {{.Player.Name}} ?')">
+      <input type="hidden" name="cle" value="{{.Key}}"><button class="secondary small">🔑 Réinitialiser le code secret</button></form>{{end}}
+    <form method="post" action="/formateur/supprimer" onsubmit="return confirm('Supprimer le compte de {{.Player.Name}} et toute sa progression ?')">
+      <input type="hidden" name="cle" value="{{.Key}}"><button class="secondary small danger">🗑 Supprimer le compte</button></form>
+  </div>
+</details>
+{{end}}
+{{end}}
+{{if .Auto}}<script>setTimeout(function () { location.reload(); }, 30000);</script>{{end}}
+{{end}}
+{{end}}

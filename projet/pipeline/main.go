@@ -27,12 +27,23 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/sqs/types"
 )
 
-const (
-	fileCommandes = "commandes-entrantes"
-	tableCommande = "Commandes"
-	bucketRecus   = "livrexpress-factures"
-	prefixeRecus  = "recus/" // clé finale : recus/<commandeId>.json
+// Noms des ressources. Sur une plateforme partagée (une instance pour toute
+// la classe), vos ressources portent un suffixe personnel : indiquez-le avec
+// la variable CQ_SUFFIXE (ex. CQ_SUFFIXE=amina → « commandes-entrantes-amina »).
+var (
+	fileCommandes = nom("commandes-entrantes")
+	tableCommande = nom("Commandes")
+	bucketRecus   = nom("livrexpress-factures")
 )
+
+const prefixeRecus = "recus/" // clé finale : recus/<commandeId>.json
+
+func nom(base string) string {
+	if s := os.Getenv("CQ_SUFFIXE"); s != "" {
+		return base + "-" + s
+	}
+	return base
+}
 
 // Commande est le contenu JSON d'un message de la file.
 // Les tags json servent au décodage du message et au reçu S3 ;

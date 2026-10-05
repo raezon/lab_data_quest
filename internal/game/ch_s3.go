@@ -103,7 +103,19 @@ func countPrefix(ctx context.Context, c *cloud.Clients, bucket, prefix string) (
 }
 
 func anonGet(c *cloud.Clients, rawURL string) (int, error) {
-	resp, err := c.HTTP.Get(rawURL)
+	req, err := http.NewRequest(http.MethodGet, rawURL, nil)
+	if err != nil {
+		return 0, err
+	}
+	// Une URL publique est rejouée sur l'adresse interne de MinIO en gardant
+	// l'en-tête Host d'origine : la signature V4 en dépend.
+	if pub, _ := url.Parse(c.Cfg.S3Public); pub != nil && req.URL.Host == pub.Host && c.Cfg.S3Public != c.Cfg.S3Endpoint {
+		if in, _ := url.Parse(c.Cfg.S3Endpoint); in != nil {
+			req.Host = req.URL.Host
+			req.URL.Scheme, req.URL.Host = in.Scheme, in.Host
+		}
+	}
+	resp, err := c.HTTP.Do(req)
 	if err != nil {
 		return 0, err
 	}
@@ -155,7 +167,7 @@ Son nom suit des règles strictes car, sur AWS, il devient un nom de domaine.</p
 		},
 		Check: func(ctx context.Context, c *cloud.Clients, _ string, _ *ChallengeState) []CheckItem {
 			r := &report{}
-			err := bucketExists(ctx, c, bucketFactures)
+			err := bucketExists(ctx, c, c.N(bucketFactures))
 			r.ok("Le bucket livrexpress-factures existe", err == nil, errDetail(err))
 			return r.items
 		},
@@ -197,7 +209,7 @@ Son contenu doit être un JSON valide contenant au moins les champs <code>numero
 		},
 		Check: func(ctx context.Context, c *cloud.Clients, _ string, _ *ChallengeState) []CheckItem {
 			r := &report{}
-			b, _, err := getObject(ctx, c, bucketFactures, keyFacture1)
+			b, _, err := getObject(ctx, c, c.N(bucketFactures), keyFacture1)
 			if !r.ok("L'objet "+keyFacture1+" existe", err == nil, errDetail(err)) {
 				return r.pending("Contenu JSON valide", "Champs numero, client, montant")
 			}
@@ -257,11 +269,11 @@ Karim veut pouvoir lister rapidement les bons d'un seul entrepôt.
 		},
 		Check: func(ctx context.Context, c *cloud.Clients, _ string, _ *ChallengeState) []CheckItem {
 			r := &report{}
-			na, err := countPrefix(ctx, c, bucketFactures, "bons-livraison/alger/")
+			na, err := countPrefix(ctx, c, c.N(bucketFactures), "bons-livraison/alger/")
 			if !r.ok("Le bucket est accessible", err == nil, errDetail(err)) {
 				return r.pending("≥ 3 objets sous bons-livraison/alger/", "≥ 2 objets sous bons-livraison/oran/")
 			}
-			no, _ := countPrefix(ctx, c, bucketFactures, "bons-livraison/oran/")
+			no, _ := countPrefix(ctx, c, c.N(bucketFactures), "bons-livraison/oran/")
 			r.ok("≥ 3 objets sous bons-livraison/alger/", na >= 3, "%d trouvé(s)", na)
 			r.ok("≥ 2 objets sous bons-livraison/oran/", no >= 2, "%d trouvé(s)", no)
 			return r.items
@@ -304,7 +316,7 @@ système (type de contenu…) et utilisateur (<code>x-amz-meta-*</code>).</p>`,
 		},
 		Check: func(ctx context.Context, c *cloud.Clients, _ string, _ *ChallengeState) []CheckItem {
 			r := &report{}
-			h, err := c.S3.HeadObject(ctx, &s3.HeadObjectInput{Bucket: aws.String(bucketFactures), Key: aws.String(keyFacture2)})
+			h, err := c.S3.HeadObject(ctx, &s3.HeadObjectInput{Bucket: aws.String(c.N(bucketFactures)), Key: aws.String(keyFacture2)})
 			if !r.ok("L'objet "+keyFacture2+" existe", err == nil, errDetail(err)) {
 				return r.pending("Content-Type = application/json", "Métadonnée client non vide", "Métadonnée entrepot = alger")
 			}
@@ -346,21 +358,21 @@ Le juriste exige de conserver <strong>toutes</strong> les versions. Et Karim vou
 		Setup: &SetupSpec{
 			Label: "💥 Simuler l'incident (suppression du contrat)",
 			Run: func(ctx context.Context, c *cloud.Clients, st *ChallengeState) (string, error) {
-				v, err := c.S3.GetBucketVersioning(ctx, &s3.GetBucketVersioningInput{Bucket: aws.String(bucketArchives)})
+				v, err := c.S3.GetBucketVersioning(ctx, &s3.GetBucketVersioningInput{Bucket: aws.String(c.N(bucketArchives))})
 				if err != nil {
 					return "", fmt.Errorf("le bucket %s est introuvable : créez-le d'abord", bucketArchives)
 				}
 				if v.Status != types.BucketVersioningStatusEnabled {
 					return "", errors.New("le stagiaire s'apprêtait à supprimer le contrat… mais sans versioning, ce serait définitif ! Activez d'abord le versioning")
 				}
-				vers, err := c.S3.ListObjectVersions(ctx, &s3.ListObjectVersionsInput{Bucket: aws.String(bucketArchives), Prefix: aws.String(keyContrat)})
+				vers, err := c.S3.ListObjectVersions(ctx, &s3.ListObjectVersionsInput{Bucket: aws.String(c.N(bucketArchives)), Prefix: aws.String(keyContrat)})
 				if err != nil {
 					return "", err
 				}
 				if len(vers.Versions) < 2 {
 					return "", fmt.Errorf("il faut au moins 2 versions du contrat avant l'incident (%d trouvée(s))", len(vers.Versions))
 				}
-				if _, err := c.S3.DeleteObject(ctx, &s3.DeleteObjectInput{Bucket: aws.String(bucketArchives), Key: aws.String(keyContrat)}); err != nil {
+				if _, err := c.S3.DeleteObject(ctx, &s3.DeleteObjectInput{Bucket: aws.String(c.N(bucketArchives)), Key: aws.String(keyContrat)}); err != nil {
 					return "", err
 				}
 				st.Secret["incident"] = "1"
@@ -397,12 +409,12 @@ Le juriste exige de conserver <strong>toutes</strong> les versions. Et Karim vou
 		},
 		Check: func(ctx context.Context, c *cloud.Clients, _ string, st *ChallengeState) []CheckItem {
 			r := &report{}
-			v, err := c.S3.GetBucketVersioning(ctx, &s3.GetBucketVersioningInput{Bucket: aws.String(bucketArchives)})
+			v, err := c.S3.GetBucketVersioning(ctx, &s3.GetBucketVersioningInput{Bucket: aws.String(c.N(bucketArchives))})
 			if !r.ok("Le bucket livrexpress-archives existe", err == nil, errDetail(err)) {
 				return r.pending("Versioning activé", "≥ 2 versions du contrat", "Incident simulé", "Contrat restauré et lisible")
 			}
 			r.ok("Versioning activé", v.Status == types.BucketVersioningStatusEnabled, "statut actuel : %q", string(v.Status))
-			vers, err := c.S3.ListObjectVersions(ctx, &s3.ListObjectVersionsInput{Bucket: aws.String(bucketArchives), Prefix: aws.String(keyContrat)})
+			vers, err := c.S3.ListObjectVersions(ctx, &s3.ListObjectVersionsInput{Bucket: aws.String(c.N(bucketArchives)), Prefix: aws.String(keyContrat)})
 			n := 0
 			if err == nil {
 				for _, ov := range vers.Versions {
@@ -415,7 +427,7 @@ Le juriste exige de conserver <strong>toutes</strong> les versions. Et Karim vou
 			if !r.ok("Incident simulé", st.Secret["incident"] == "1", "cliquez sur « Simuler l'incident » une fois les 2 versions créées") {
 				return r.pending("Contrat restauré et lisible")
 			}
-			_, err = c.S3.HeadObject(ctx, &s3.HeadObjectInput{Bucket: aws.String(bucketArchives), Key: aws.String(keyContrat)})
+			_, err = c.S3.HeadObject(ctx, &s3.HeadObjectInput{Bucket: aws.String(c.N(bucketArchives)), Key: aws.String(keyContrat)})
 			r.ok("Contrat restauré et lisible", err == nil, "l'objet est toujours masqué par un delete marker")
 			return r.items
 		},
@@ -455,7 +467,7 @@ qui <strong>expire</strong> les objets du préfixe <code>tmp/</code> au bout de 
 		},
 		Check: func(ctx context.Context, c *cloud.Clients, _ string, _ *ChallengeState) []CheckItem {
 			r := &report{}
-			lc, err := c.S3.GetBucketLifecycleConfiguration(ctx, &s3.GetBucketLifecycleConfigurationInput{Bucket: aws.String(bucketFactures)})
+			lc, err := c.S3.GetBucketLifecycleConfiguration(ctx, &s3.GetBucketLifecycleConfigurationInput{Bucket: aws.String(c.N(bucketFactures))})
 			if !r.ok("Une configuration de cycle de vie existe", err == nil, errDetail(err)) {
 				return r.pending("Règle active sur le préfixe tmp/", "Expiration à 7 jours")
 			}
@@ -527,12 +539,17 @@ valable <strong>1 heure maximum</strong>, et la coller ci-dessous. Le bucket doi
 			ep, _ := url.Parse(c.Cfg.S3Endpoint)
 			port := ep.Port()
 			okHost := (u.Hostname() == "127.0.0.1" || u.Hostname() == "localhost" || u.Hostname() == ep.Hostname()) && u.Port() == port
-			if !r.ok("Pointe vers MinIO local", okHost, "hôte attendu : 127.0.0.1:%s ou localhost:%s", port, port) {
+			expected := fmt.Sprintf("127.0.0.1:%s ou localhost:%s", port, port)
+			if pub, _ := url.Parse(c.Cfg.S3Public); c.Cfg.Hosted && pub != nil {
+				// Plateforme partagée : l'URL est signée pour l'adresse publique.
+				okHost, expected = u.Host == pub.Host, pub.Host
+			}
+			if !r.ok("Pointe vers MinIO local", okHost, "hôte attendu : %s", expected) {
 				return r.pending("URL signée (Signature V4)", "Vise la facture F-0001", "Validité ≤ 1 heure", "Le lien fonctionne", "Le bucket reste privé")
 			}
 			q := u.Query()
 			r.ok("URL signée (Signature V4)", q.Get("X-Amz-Signature") != "" && q.Get("X-Amz-Algorithm") == "AWS4-HMAC-SHA256", "paramètres X-Amz-Signature / X-Amz-Algorithm absents")
-			r.ok("Vise la facture F-0001", strings.TrimPrefix(u.Path, "/") == bucketFactures+"/"+keyFacture1, "chemin trouvé : %s", u.Path)
+			r.ok("Vise la facture F-0001", strings.TrimPrefix(u.Path, "/") == c.N(bucketFactures)+"/"+keyFacture1, "chemin trouvé : %s", u.Path)
 			exp, _ := strconv.Atoi(q.Get("X-Amz-Expires"))
 			r.ok("Validité ≤ 1 heure", exp > 0 && exp <= 3600, "X-Amz-Expires = %d s", exp)
 			code, err := anonGet(c, u.String())
@@ -586,16 +603,16 @@ func s3Policy() *Challenge {
 		},
 		Check: func(ctx context.Context, c *cloud.Clients, _ string, _ *ChallengeState) []CheckItem {
 			r := &report{}
-			err := bucketExists(ctx, c, bucketSite)
+			err := bucketExists(ctx, c, c.N(bucketSite))
 			if !r.ok("Le bucket livrexpress-site existe", err == nil, errDetail(err)) {
 				return r.pending("Les deux objets existent", "public/index.html lisible anonymement", "prive/tarifs-negocies.csv protégé", "Liste anonyme du bucket refusée")
 			}
-			_, e1 := c.S3.HeadObject(ctx, &s3.HeadObjectInput{Bucket: aws.String(bucketSite), Key: aws.String("public/index.html")})
-			_, e2 := c.S3.HeadObject(ctx, &s3.HeadObjectInput{Bucket: aws.String(bucketSite), Key: aws.String("prive/tarifs-negocies.csv")})
+			_, e1 := c.S3.HeadObject(ctx, &s3.HeadObjectInput{Bucket: aws.String(c.N(bucketSite)), Key: aws.String("public/index.html")})
+			_, e2 := c.S3.HeadObject(ctx, &s3.HeadObjectInput{Bucket: aws.String(c.N(bucketSite)), Key: aws.String("prive/tarifs-negocies.csv")})
 			if !r.ok("Les deux objets existent", e1 == nil && e2 == nil, "public/index.html: %v — prive/tarifs-negocies.csv: %v", e1 == nil, e2 == nil) {
 				return r.pending("public/index.html lisible anonymement", "prive/tarifs-negocies.csv protégé", "Liste anonyme du bucket refusée")
 			}
-			base := strings.TrimRight(c.Cfg.S3Endpoint, "/") + "/" + bucketSite
+			base := strings.TrimRight(c.Cfg.S3Endpoint, "/") + "/" + c.N(bucketSite)
 			code, _ := anonGet(c, base+"/public/index.html")
 			r.ok("public/index.html lisible anonymement", code == 200, "HTTP %d (attendu 200)", code)
 			code, _ = anonGet(c, base+"/prive/tarifs-negocies.csv")

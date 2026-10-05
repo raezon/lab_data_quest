@@ -1,6 +1,6 @@
 {{define "content"}}
 <h1>Bonjour {{.Player}} 👋</h1>
-<p class="lead">Choisissez un chapitre. Les défis d'un chapitre se débloquent dans l'ordre ; le projet final s'ouvre une fois les trois premiers chapitres terminés.</p>
+<p class="lead">{{if .Hosted}}Votre progression est enregistrée sur votre compte. {{end}}Choisissez un chapitre. Les défis d'un chapitre se débloquent dans l'ordre ; le projet final s'ouvre une fois les trois premiers chapitres terminés.</p>
 {{template "health" .}}
 
 <section class="grid two">
@@ -25,6 +25,28 @@
   </ol>
 </section>
 
+{{if .Hosted}}
+<section class="panel" id="identifiants">
+  <h2>🔑 Accès et identifiants</h2>
+  <p class="meta">Les services tournent sur la plateforme de la classe : vous vous y connectez depuis votre poste avec l'<strong>AWS CLI</strong>
+  (<a href="https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html" target="_blank" rel="noopener">installation ↗</a>){{if .Cfg.S3Console}}, ou, pour S3, avec la console web de MinIO{{end}}.</p>
+  <table class="tools">
+    <tr><th>Service</th><th>Adresse (<code>--endpoint-url</code>)</th><th>Pour tester la connexion</th></tr>
+    <tr><td>S3 (MinIO)</td><td><code>{{.Cfg.S3Endpoint}}</code></td><td><code>aws s3 ls --endpoint-url {{.Cfg.S3Endpoint}}</code></td></tr>
+    <tr><td>DynamoDB</td><td><code>{{.Cfg.DynamoEndpoint}}</code></td><td><code>aws dynamodb list-tables --endpoint-url {{.Cfg.DynamoEndpoint}}</code></td></tr>
+    <tr><td>SQS (ElasticMQ)</td><td><code>{{.Cfg.SQSEndpoint}}</code></td><td><code>aws sqs list-queues --endpoint-url {{.Cfg.SQSEndpoint}}</code></td></tr>
+    {{if .Cfg.S3Console}}<tr><td>Console web MinIO</td><td colspan="2"><a href="{{.Cfg.S3Console}}" target="_blank" rel="noopener">{{.Cfg.S3Console}}</a> — mêmes identifiants</td></tr>{{end}}
+  </table>
+  <p class="meta">Identifiants, à saisir une fois dans votre terminal (ou via <code>aws configure</code>) :</p>
+  <pre><code>export AWS_ACCESS_KEY_ID={{.Cfg.AccessKey}}
+export AWS_SECRET_ACCESS_KEY={{.Cfg.SecretKey}}
+export AWS_DEFAULT_REGION={{.Cfg.Region}}</code></pre>
+  <p class="meta">Sous Windows PowerShell : <code>$env:AWS_ACCESS_KEY_ID="{{.Cfg.AccessKey}}"</code>, etc. Pour un client <code>mc</code> :</p>
+  <pre><code>mc alias set classe {{.Cfg.S3Endpoint}} {{.Cfg.AccessKey}} {{.Cfg.SecretKey}}</code></pre>
+  <p class="meta">🏷️ La plateforme est partagée par toute la classe : vos buckets, tables et files portent votre suffixe personnel
+  <code>-{{.Suffix}}</code> (par exemple <code>livrexpress-factures</code>). Les énoncés affichent déjà vos noms complets. Ne touchez pas aux ressources des autres.</p>
+</section>
+{{else}}
 <section class="panel">
   <h2>Boîte à outils</h2>
   <table class="tools">
@@ -53,4 +75,5 @@ export AWS_DEFAULT_REGION={{.Cfg.Region}}</code></pre>
   <p class="meta">Pour un client <code>mc</code> installé sur votre poste :</p>
   <pre><code>mc alias set local {{.Cfg.S3Endpoint}} {{.Cfg.AccessKey}} {{.Cfg.SecretKey}}</code></pre>
 </section>
+{{end}}
 {{end}}

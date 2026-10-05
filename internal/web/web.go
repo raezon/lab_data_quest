@@ -8,10 +8,12 @@ import (
 	"embed"
 	"fmt"
 	"html/template"
+	"io"
 	"io/fs"
 	"log"
 	"net/http"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -34,16 +36,21 @@ type Server struct {
 	store *game.Store
 	cloud *cloud.Clients
 	tpl   map[string]*template.Template
+	// teacherPass active l'espace formateur (/formateur) quand il est défini.
+	teacherPass string
 }
 
 // New prépare les gabarits et renvoie le serveur.
-func New(cat *game.Catalog, store *game.Store, c *cloud.Clients) (*Server, error) {
+// teacherPassword protège l'espace formateur ; vide, il est désactivé.
+func New(cat *game.Catalog, store *game.Store, c *cloud.Clients, teacherPassword string) (*Server, error) {
 	funcs := template.FuncMap{
-		"raw": func(s string) template.HTML { return template.HTML(s) },
-		"inc": func(i int) int { return i + 1 },
+		"raw":  func(s string) template.HTML { return template.HTML(s) },
+		"inc":  func(i int) int { return i + 1 },
+		"when": when,
+		"f1":   func(f float64) string { return strconv.FormatFloat(f, 'f', 1, 64) },
 	}
-	s := &Server{cat: cat, store: store, cloud: c, tpl: map[string]*template.Template{}}
-	for _, page := range []string{"login", "home", "chapter", "challenge", "leaderboard"} {
+	s := &Server{cat: cat, store: store, cloud: c, tpl: map[string]*template.Template{}, teacherPass: teacherPassword}
+	for _, page := range []string{"login", "home", "chapter", "challenge", "leaderboard", "teacher"} {
 		t, err := template.New("layout.html").Funcs(funcs).ParseFS(tplFS, "templates/layout.html", "templates/"+page+".html")
 		if err != nil {
 			return nil, err
@@ -58,6 +65,10 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	static, _ := fs.Sub(staticFS, "static")
 	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServerFS(static)))
+	// Cahier de projet PDF, si le dossier docs/ est présent à côté du binaire.
+	if dir := os.Getenv("CQ_DOCS"); dir != "" {
+		mux.Handle("GET /docs/", http.StripPrefix("/docs/", http.FileServer(http.Dir(dir))))
+	}
 	mux.HandleFunc("GET /{$}", s.home)
 	mux.HandleFunc("POST /login", s.login)
 	mux.HandleFunc("POST /logout", s.logout)
@@ -68,6 +79,12 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /defi/{id}/verifier", s.check)
 	mux.HandleFunc("POST /quiz/{id}", s.quiz)
 	mux.HandleFunc("GET /classement", s.leaderboard)
+	mux.HandleFunc("GET /formateur", s.teacher)
+	mux.HandleFunc("POST /formateur/login", s.teacherLogin)
+	mux.HandleFunc("POST /formateur/logout", s.teacherLogout)
+	mux.HandleFunc("GET /formateur/scores.csv", s.teacherCSV)
+	mux.HandleFunc("POST /formateur/code", s.teacherResetCode)
+	mux.HandleFunc("POST /formateur/supprimer", s.teacherDelete)
 	return mux
 }
 
@@ -96,6 +113,10 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
 	}
+	if s.cloud.Cfg.Hosted {
+		s.loginHosted(w, r, name)
+		return
+	}
 	if err := s.store.Do(func() (bool, error) { s.store.Player(name); return true, nil }); err != nil {
 		s.fail(w, err)
 		return
@@ -105,6 +126,14 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
+	if c, err := r.Cookie(sessionCookie); err == nil {
+		s.store.Do(func() (bool, error) {
+			_, ok := s.store.Sessions[c.Value]
+			delete(s.store.Sessions, c.Value)
+			return ok, nil
+		})
+	}
+	http.SetCookie(w, &http.Cookie{Name: sessionCookie, Path: "/", MaxAge: -1})
 	http.SetCookie(w, &http.Cookie{Name: cookieName, Path: "/", MaxAge: -1})
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
@@ -124,13 +153,20 @@ type base struct {
 	AllUp    bool
 	Cfg      cloud.Config
 	Chapters []*game.Chapter
+	Hosted   bool   // plateforme partagée : comptes, suffixes, adresses publiques
+	Suffix   string // suffixe des ressources du joueur
+	Teacher  bool   // espace formateur activé
 }
+
+// suffixOf permet à render de personnaliser la page (noms de ressources).
+func (b base) suffixOf() string { return b.Suffix }
 
 // base construit l'en-tête commun. À appeler sous verrou du store.
 func (s *Server) base(p *game.Player, title string) base {
-	b := base{Title: title, MaxXP: s.cat.MaxXP(), Cfg: s.cloud.Cfg, Chapters: s.cat.Chapters}
+	b := base{Title: title, MaxXP: s.cat.MaxXP(), Cfg: s.cloud.Cfg.Display(), Chapters: s.cat.Chapters,
+		Hosted: s.cloud.Cfg.Hosted, Teacher: s.teacherPass != ""}
 	if p != nil {
-		b.Player, b.XP = p.Name, p.XP()
+		b.Player, b.XP, b.Suffix = p.Name, p.XP(), p.ID
 		b.Rank, b.Next = game.RankFor(b.XP)
 		if b.Next != nil {
 			b.ToNext = b.Next.MinXP - b.XP
@@ -153,8 +189,12 @@ func (s *Server) render(w http.ResponseWriter, page string, data any) {
 		s.fail(w, err)
 		return
 	}
+	out := buf.String()
+	if p, ok := data.(interface{ suffixOf() string }); ok {
+		out = game.Personalize(out, s.cloud.For(p.suffixOf()))
+	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	buf.WriteTo(w)
+	io.WriteString(w, out)
 }
 
 func (s *Server) fail(w http.ResponseWriter, err error) {
@@ -217,14 +257,16 @@ func (s *Server) card(p *game.Player, ch *game.Chapter) chapterCard {
 }
 
 func (s *Server) home(w http.ResponseWriter, r *http.Request) {
-	name := playerName(r)
+	name := s.playerKey(r)
 	if name == "" {
 		b := s.base(nil, "Bienvenue")
 		b.withHealth(s.cloud)
 		s.render(w, "login", struct {
 			base
 			Ranks []game.Rank
-		}{b, game.Ranks})
+			Error string
+			Name  string
+		}{b, game.Ranks, r.URL.Query().Get("erreur"), cleanName(r.URL.Query().Get("nom"))})
 		return
 	}
 	var data struct {
@@ -261,7 +303,7 @@ type quizRow struct {
 }
 
 func (s *Server) chapter(w http.ResponseWriter, r *http.Request) {
-	name := playerName(r)
+	name := s.playerKey(r)
 	ch := s.cat.Chapter(r.PathValue("id"))
 	if name == "" || ch == nil {
 		http.Redirect(w, r, "/", http.StatusSeeOther)
@@ -359,7 +401,7 @@ func hintKey(step, hint int) string { return fmt.Sprintf("%d:%d", step, hint) }
 
 // load renvoie le joueur et le défi de la requête, ou redirige.
 func (s *Server) load(w http.ResponseWriter, r *http.Request) (string, *game.Challenge, bool) {
-	name := playerName(r)
+	name := s.playerKey(r)
 	c := s.cat.Challenge(r.PathValue("id"))
 	if name == "" || c == nil {
 		http.Redirect(w, r, "/", http.StatusSeeOther)
@@ -408,6 +450,7 @@ func (s *Server) hint(w http.ResponseWriter, r *http.Request) {
 			return false, nil
 		}
 		st.HintsUsed[hintKey(step, idx)] = true
+		p.LastSeen = time.Now()
 		return true, nil
 	})
 	if err != nil {
@@ -419,7 +462,11 @@ func (s *Server) hint(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) setup(w http.ResponseWriter, r *http.Request) {
 	name, c, ok := s.load(w, r)
-	if !ok || c.Setup == nil {
+	if !ok {
+		return
+	}
+	if c.Setup == nil {
+		http.Redirect(w, r, "/defi/"+c.ID, http.StatusSeeOther)
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 45*time.Second)
@@ -432,10 +479,11 @@ func (s *Server) setup(w http.ResponseWriter, r *http.Request) {
 		}
 		st := p.State(c.ID)
 		var msg string
-		if msg, runErr = c.Setup.Run(ctx, s.cloud, st); runErr != nil {
+		if msg, runErr = c.Setup.Run(ctx, s.cloud.For(p.ID), st); runErr != nil {
 			return false, nil
 		}
 		st.SetupInfo = msg
+		p.LastSeen = time.Now()
 		return true, nil
 	})
 	if err != nil {
@@ -466,7 +514,8 @@ func (s *Server) check(w http.ResponseWriter, r *http.Request) {
 		}
 		st := p.State(c.ID)
 		st.Attempts++
-		items := runCheck(ctx, s.cloud, c, answer, st)
+		p.LastSeen = time.Now()
+		items := runCheck(ctx, s.cloud.For(p.ID), c, answer, st)
 		success := len(items) > 0
 		for _, it := range items {
 			success = success && it.OK
@@ -504,7 +553,7 @@ func runCheck(ctx context.Context, cl *cloud.Clients, c *game.Challenge, answer 
 }
 
 func (s *Server) quiz(w http.ResponseWriter, r *http.Request) {
-	name := playerName(r)
+	name := s.playerKey(r)
 	q := s.cat.Question(r.PathValue("id"))
 	choice, convErr := strconv.Atoi(r.FormValue("choix"))
 	if name == "" || q == nil {
@@ -518,6 +567,7 @@ func (s *Server) quiz(w http.ResponseWriter, r *http.Request) {
 			return false, nil
 		}
 		p.Quiz[q.ID] = &game.QuizState{Choice: choice, Correct: choice == q.Answer}
+		p.LastSeen = time.Now()
 		return true, nil
 	})
 	if err != nil {
@@ -536,7 +586,7 @@ func (s *Server) quiz(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) leaderboard(w http.ResponseWriter, r *http.Request) {
-	name := playerName(r)
+	name := s.playerKey(r)
 	var b base
 	s.store.Do(func() (bool, error) {
 		if name != "" {

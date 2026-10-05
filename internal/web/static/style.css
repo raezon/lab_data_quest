@@ -119,3 +119,29 @@ th { color: var(--muted); font-size: .8rem; text-transform: uppercase; letter-sp
 .alert.warn { background: #2a2410; border-color: #8a6d1a; } .alert.info { background: #12233d; border-color: var(--info); }
 .score .big { font-size: 1.9rem; font-weight: 800; color: var(--accent); margin: 0; }
 .docs { list-style: none; padding: 0; margin: 0; font-size: .9rem; } .docs li { margin: 5px 0; }
+
+/* Espace formateur */
+.teacher-head { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; }
+.actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.fiche .actions { margin-top: 12px; }
+.grid.four { grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); }
+.stat { display: grid; gap: 2px; }
+.stat b { font-size: 1.7rem; color: var(--accent); line-height: 1.2; }
+.stat span { color: var(--muted); font-size: .88rem; }
+.scores td { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.scores td:nth-child(2), .scores td:first-child { white-space: normal; }
+.scores td small { display: block; font-size: .76rem; }
+.scores td.full { color: var(--good); }
+.scores .prog { min-width: 130px; }
+.scores tr.ok td:nth-child(2) { color: var(--good); }
+.scores tr.idle { color: var(--muted); }
+.scores tr.quizrow td { background: var(--panel2); }
+.fiche summary { cursor: pointer; }
+.fiche summary small { margin-left: 8px; }
+.fiche[open] summary { margin-bottom: 8px; }
+.danger { color: #ffb3b3; border-color: #7a3b3b; }
+.suffix-note { border-left: 4px solid var(--accent); }
+footer a { color: var(--muted); text-decoration: underline; }
+input[type=password] { font: inherit; width: 100%; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--line); background: #0b101b; color: var(--text); }
+.login .field { flex: 1; min-width: 180px; }
+.login .row { align-items: end; }

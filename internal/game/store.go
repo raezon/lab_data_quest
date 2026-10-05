@@ -32,8 +32,14 @@ type QuizState struct {
 
 // Player est un·e étudiant·e.
 type Player struct {
-	Name       string                     `json:"name"`
-	Created    time.Time                  `json:"created"`
+	Name    string    `json:"name"`
+	Created time.Time `json:"created"`
+	// Champs du mode plateforme partagée.
+	ID       string    `json:"id,omitempty"`       // suffixe des ressources de l'étudiant·e
+	PinSalt  string    `json:"pinSalt,omitempty"`  // code secret : sel…
+	PinHash  string    `json:"pinHash,omitempty"`  // …et empreinte SHA-256
+	LastSeen time.Time `json:"lastSeen,omitempty"` // dernière action (indice, vérification, quiz)
+
 	Challenges map[string]*ChallengeState `json:"challenges"`
 	Quiz       map[string]*QuizState      `json:"quiz"`
 }
@@ -91,11 +97,13 @@ type Store struct {
 	mu      sync.Mutex
 	path    string
 	Players map[string]*Player `json:"players"`
+	// Sessions associe un jeton de session à la clé d'un joueur (mode partagé).
+	Sessions map[string]string `json:"sessions,omitempty"`
 }
 
 // OpenStore charge (ou crée) le fichier de progression.
 func OpenStore(path string) (*Store, error) {
-	s := &Store{path: path, Players: map[string]*Player{}}
+	s := &Store{path: path, Players: map[string]*Player{}, Sessions: map[string]string{}}
 	b, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
 		return s, os.MkdirAll(filepath.Dir(path), 0o755)
@@ -108,6 +116,9 @@ func OpenStore(path string) (*Store, error) {
 	}
 	if s.Players == nil {
 		s.Players = map[string]*Player{}
+	}
+	if s.Sessions == nil {
+		s.Sessions = map[string]string{}
 	}
 	return s, nil
 }
@@ -129,7 +140,7 @@ func (s *Store) flush() error {
 		return err
 	}
 	tmp := s.path + ".tmp"
-	if err := os.WriteFile(tmp, b, 0o644); err != nil {
+	if err := os.WriteFile(tmp, b, 0o600); err != nil {
 		return err
 	}
 	return os.Rename(tmp, s.path)

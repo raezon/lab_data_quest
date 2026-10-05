@@ -163,7 +163,7 @@ func sqsCreateQueue() *Challenge {
 		},
 		Check: func(ctx context.Context, c *cloud.Clients, _ string, _ *ChallengeState) []CheckItem {
 			r := &report{}
-			u, err := queueURL(ctx, c, queueCommandes)
+			u, err := queueURL(ctx, c, c.N(queueCommandes))
 			if !r.ok("La file commandes-entrantes existe", err == nil, errDetail(err)) {
 				return r.pending("Délai de visibilité = 60 s")
 			}
@@ -201,7 +201,7 @@ décoder le corps.</p>`,
 		},
 		Check: func(ctx context.Context, c *cloud.Clients, _ string, _ *ChallengeState) []CheckItem {
 			r := &report{}
-			u, err := queueURL(ctx, c, queueCommandes)
+			u, err := queueURL(ctx, c, c.N(queueCommandes))
 			if !r.ok("La file commandes-entrantes existe", err == nil, errDetail(err)) {
 				return r.pending("Message JSON avec commandeId", "Attribut source = site-web")
 			}
@@ -280,7 +280,7 @@ La file doit être <strong>vide</strong> (messages supprimés) au moment de la v
 			}
 			norm := strings.ToUpper(strings.NewReplacer("-", "", " ", "").Replace(answer))
 			r.ok("Code correct", norm == want, "ce n'est pas le bon code : avez-vous tous les fragments, dans l'ordre ?")
-			u, err := queueURL(ctx, c, queueMystere)
+			u, err := queueURL(ctx, c, c.N(queueMystere))
 			n := -1
 			if err == nil {
 				n, err = pendingCount(ctx, c, u)
@@ -292,7 +292,7 @@ La file doit être <strong>vide</strong> (messages supprimés) au moment de la v
 }
 
 func setupMystere(ctx context.Context, c *cloud.Clients, st *ChallengeState) (string, error) {
-	u, err := ensureQueue(ctx, c, queueMystere)
+	u, err := ensureQueue(ctx, c, c.N(queueMystere))
 	if err != nil {
 		return "", err
 	}
@@ -341,7 +341,7 @@ Il faut un mécanisme pour mettre ce genre de message <strong>en quarantaine</st
 		Setup: &SetupSpec{
 			Label: "☠️ Injecter le message empoisonné",
 			Run: func(ctx context.Context, c *cloud.Clients, st *ChallengeState) (string, error) {
-				u, err := queueURL(ctx, c, queuePaiement)
+				u, err := queueURL(ctx, c, c.N(queuePaiement))
 				if err != nil {
 					return "", errors.New("la file commandes-paiement n'existe pas encore")
 				}
@@ -380,9 +380,9 @@ Il faut un mécanisme pour mettre ce genre de message <strong>en quarantaine</st
 		},
 		Check: func(ctx context.Context, c *cloud.Clients, _ string, st *ChallengeState) []CheckItem {
 			r := &report{}
-			dlqURL, err := queueURL(ctx, c, queuePaiementDLQ)
+			dlqURL, err := queueURL(ctx, c, c.N(queuePaiementDLQ))
 			r.ok("La file commandes-paiement-dlq existe", err == nil, errDetail(err))
-			srcURL, err2 := queueURL(ctx, c, queuePaiement)
+			srcURL, err2 := queueURL(ctx, c, c.N(queuePaiement))
 			if !r.ok("La file commandes-paiement existe", err2 == nil, errDetail(err2)) || err != nil {
 				return r.pending("RedrivePolicy vers la DLQ", "maxReceiveCount = 3", "Message empoisonné en quarantaine")
 			}
@@ -445,7 +445,7 @@ Y envoyer, dans le groupe <code>client-42</code>, trois messages JSON <code>{"et
 		},
 		Check: func(ctx context.Context, c *cloud.Clients, _ string, _ *ChallengeState) []CheckItem {
 			r := &report{}
-			u, err := queueURL(ctx, c, queueFifo)
+			u, err := queueURL(ctx, c, c.N(queueFifo))
 			if !r.ok("La file paiements.fifo existe", err == nil, errDetail(err)) {
 				return r.pending("FIFO activé", "Déduplication par contenu", "Étapes 1, 2, 3 dans l'ordre (groupe client-42)")
 			}

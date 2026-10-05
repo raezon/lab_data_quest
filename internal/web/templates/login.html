@@ -3,13 +3,25 @@
   <h1>Bienvenue chez <em>LivrExpress</em></h1>
   <p class="lead">Vous venez d'être recruté·e comme ingénieur·e cloud junior. Votre mission : migrer
   l'entreprise vers des services de données de type AWS — <strong>S3</strong>, <strong>DynamoDB</strong>
-  et <strong>SQS</strong> — sans dépenser un centime, grâce à des émulateurs locaux.</p>
+  et <strong>SQS</strong> — sans dépenser un centime, grâce à des émulateurs{{if not .Hosted}} locaux{{end}}.</p>
   <form class="login" method="post" action="/login">
+    {{if .Hosted}}
+    <div class="row">
+      <div class="field"><label for="name">Prénom et nom</label>
+        <input id="name" name="name" maxlength="30" required autofocus placeholder="ex. Amina Benali" value="{{.Name}}" autocomplete="name"></div>
+      <div class="field"><label for="code">Code secret</label>
+        <input id="code" name="code" type="password" minlength="4" maxlength="64" required placeholder="4 caractères ou plus" autocomplete="current-password"></div>
+      <button class="primary">Entrer</button>
+    </div>
+    <p class="meta">Première visite ? Choisissez votre code secret : il protège votre progression et vous sera redemandé à chaque connexion.</p>
+    {{if .Error}}<div class="alert bad">⚠️ {{.Error}}</div>{{end}}
+    {{else}}
     <label for="name">Votre prénom ou pseudo</label>
     <div class="row">
       <input id="name" name="name" maxlength="30" required autofocus placeholder="ex. Amina">
       <button class="primary">Commencer l'aventure</button>
     </div>
+    {{end}}
   </form>
   {{template "health" .}}
 </section>
