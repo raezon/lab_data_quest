@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{.Title}} · CloudQuest</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header class="top">
+  <a class="brand" href="/">☁️ Cloud<span>Quest</span></a>
+  {{if .Player}}
+  <nav>
+    <a href="/">Missions</a>
+    <a href="/classement">Classement</a>
+  </nav>
+  <div class="hud">
+    <div class="rank" title="Grade actuel">{{.Rank.Icon}} {{.Rank.Name}}</div>
+    <div class="xp">
+      <div class="xpbar"><i style="width:{{.Pct}}%"></i></div>
+      <small>{{.XP}} / {{.MaxXP}} XP{{if .Next}} · encore {{.ToNext}} XP avant « {{.Next.Name}} »{{end}}</small>
+    </div>
+    <form method="post" action="/logout"><button class="link" title="Changer de joueur">{{.Player}} ⏏</button></form>
+  </div>
+  {{end}}
+</header>
+<main>
+{{template "content" .}}
+</main>
+<footer>CloudQuest — apprendre S3, DynamoDB et SQS en local avec MinIO, DynamoDB Local et ElasticMQ.</footer>
+</body>
+</html>
+
+{{define "health"}}
+<div class="health {{if .AllUp}}up{{else}}down{{end}}">
+  <span class="{{if index .Health "s3"}}ok{{else}}ko{{end}}">MinIO (S3) :9100</span>
+  <span class="{{if index .Health "dynamodb"}}ok{{else}}ko{{end}}">DynamoDB Local :8100</span>
+  <span class="{{if index .Health "sqs"}}ok{{else}}ko{{end}}">ElasticMQ (SQS) :9324</span>
+  {{if not .AllUp}}<p>Un émulateur ne répond pas. Lancez <code>docker compose up -d</code> à la racine du projet.</p>{{end}}
+</div>
+{{end}}

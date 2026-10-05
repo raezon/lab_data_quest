@@ -1,0 +1,45 @@
+{{define "content"}}
+<p class="crumbs"><a href="/">Missions</a> ›</p>
+<div class="chapter-head" style="--c:{{.Card.Color}}">
+  <span class="icon big">{{.Card.Icon}}</span>
+  <div><h1>{{.Card.Title}}</h1><small>{{.Card.Service}} → en local : {{.Card.LocalTool}}</small></div>
+</div>
+<div class="panel intro">{{raw .Card.Intro}}</div>
+
+{{if .Card.Locked}}
+<div class="alert warn">🔒 Ce chapitre s'ouvrira quand vous aurez terminé tous les défis de : {{range $i, $r := .Card.Requires}}{{if $i}}, {{end}}{{$r}}{{end}}.</div>
+{{end}}
+
+<h2>Défis <small>{{.Card.Done}}/{{.Card.Total}}</small></h2>
+<ol class="missions">
+{{range .Challenges}}
+  <li class="{{if .Done}}done{{else if .Locked}}locked{{end}}">
+    <span class="state">{{if .Done}}✅{{else if .Locked}}🔒{{else}}▶{{end}}</span>
+    <div class="grow">
+      {{if .Locked}}<b>{{.Title}}</b>{{else}}<a href="/defi/{{.ID}}"><b>{{.Title}}</b></a>{{end}}
+      <div class="tags">{{range .Concepts}}<span>{{.}}</span>{{end}}</div>
+    </div>
+    <span class="xp-badge">{{if .Done}}{{.Earned}} / {{end}}{{.XP}} XP</span>
+  </li>
+{{end}}
+</ol>
+
+<h2 id="quiz">Quiz <small>{{.Card.QuizDone}}/{{.Card.QuizTotal}} — une seule tentative par question</small></h2>
+{{range .Quiz}}
+<form class="panel quiz {{if .Answered}}{{if .Correct}}good{{else}}bad{{end}}{{end}}" id="{{.ID}}" method="post" action="/quiz/{{.ID}}">
+  <p class="q"><b>{{.Num}}.</b> {{raw .Text}}</p>
+  {{$q := .}}
+  {{range $i, $o := .Options}}
+  <label class="opt {{if $q.Answered}}{{if eq $i $q.Answer}}right{{else if eq $i $q.Choice}}wrong{{end}}{{end}}">
+    <input type="radio" name="choix" value="{{$i}}" required {{if $q.Answered}}disabled {{if eq $i $q.Choice}}checked{{end}}{{end}}>
+    <span>{{raw $o}}</span>
+  </label>
+  {{end}}
+  {{if .Answered}}
+    <p class="explain">{{if .Correct}}✅ Bonne réponse.{{else}}❌ Ce n'était pas ça.{{end}} {{raw .Explain}}</p>
+  {{else}}
+    <button class="primary small">Valider ma réponse</button>
+  {{end}}
+</form>
+{{end}}
+{{end}}

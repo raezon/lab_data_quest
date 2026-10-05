@@ -1,0 +1,21 @@
+{{define "content"}}
+<section class="hero">
+  <h1>Bienvenue chez <em>LivrExpress</em></h1>
+  <p class="lead">Vous venez d'être recruté·e comme ingénieur·e cloud junior. Votre mission : migrer
+  l'entreprise vers des services de données de type AWS — <strong>S3</strong>, <strong>DynamoDB</strong>
+  et <strong>SQS</strong> — sans dépenser un centime, grâce à des émulateurs locaux.</p>
+  <form class="login" method="post" action="/login">
+    <label for="name">Votre prénom ou pseudo</label>
+    <div class="row">
+      <input id="name" name="name" maxlength="30" required autofocus placeholder="ex. Amina">
+      <button class="primary">Commencer l'aventure</button>
+    </div>
+  </form>
+  {{template "health" .}}
+</section>
+<section class="grid three">
+  <div class="tile"><h3>🎯 Des missions réelles</h3><p>Chaque défi est vérifié sur l'état réel des services : pas de QCM déguisé, il faut vraiment créer le bucket, la table, la file.</p></div>
+  <div class="tile"><h3>💡 Des indices, pas des solutions</h3><p>Chaque étape propose des indices progressifs. Chaque indice coûte {{/* cf. game.HintPenaltyPct */}}10&nbsp;% des points du défi.</p></div>
+  <div class="tile"><h3>🏗️ Un projet final</h3><p>Assemblez les trois services dans un pipeline de commandes écrit en Go, puis rendez-le résistant aux pannes.</p></div>
+</section>
+{{end}}

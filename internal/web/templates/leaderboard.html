@@ -1,0 +1,13 @@
+{{define "content"}}
+<h1>🏆 Classement</h1>
+<div class="panel">
+{{if .Rows}}
+<table class="board">
+  <tr><th>#</th><th>Joueur</th><th>Grade</th><th>Défis réussis</th><th>XP</th></tr>
+  {{range $i, $r := .Rows}}
+  <tr class="{{if eq $r.Name $.Player}}me{{end}}"><td>{{inc $i}}</td><td>{{$r.Name}}</td><td>{{$r.Rank.Icon}} {{$r.Rank.Name}}</td><td>{{$r.Done}}</td><td><b>{{$r.XP}}</b></td></tr>
+  {{end}}
+</table>
+{{else}}<p>Aucun joueur pour l'instant.</p>{{end}}
+</div>
+{{end}}
