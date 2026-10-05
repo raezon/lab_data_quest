@@ -13,7 +13,17 @@ Chaque défi est **vérifié sur l'état réel des émulateurs** (le bucket, la 
 
 ## Démarrage
 
-Prérequis : Docker (avec Compose) et Go ≥ 1.24.
+Prérequis : Docker (avec Compose), Go ≥ 1.24 et `make`.
+
+```bash
+make install                  # vérifie les prérequis, télécharge modules Go et images Docker
+make start                    # émulateurs + jeu : http://127.0.0.1:8090
+```
+
+`make` seul liste toutes les commandes (`up`, `down`, `test`, `s3`, `dynamo`, `sqs`, `reset`…).
+Par exemple : `make s3 ARGS="ls"`, `make dynamo ARGS="list-tables"`, `make sqs ARGS="list-queues"`.
+
+Sans `make`, l'équivalent à la main :
 
 ```bash
 docker compose up -d          # MinIO, DynamoDB Local, ElasticMQ
