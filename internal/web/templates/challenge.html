@@ -1,0 +1,102 @@
+{{define "content"}}
+<p class="crumbs"><a href="/">Missions</a> › <a href="/chapitre/{{.Chapter.ID}}">{{.Chapter.Title}}</a> ›</p>
+<div class="chapter-head" style="--c:{{.Chapter.Color}}">
+  <span class="icon big">{{.Chapter.Icon}}</span>
+  <div><h1>{{.C.Title}}</h1><small>Défi {{.Num}}/{{.Count}} · {{.C.XP}} XP{{if .State.Done}} · ✅ réussi ({{.State.XPEarned}} XP){{end}}</small></div>
+</div>
+
+<div class="cols">
+<div>
+  <section class="panel story">{{raw .C.Story}}</section>
+
+  <section class="panel" id="mission">
+    <h2>🎯 Objectif</h2>
+    <div class="objective">{{raw .C.Objective}}</div>
+    {{if .C.Setup}}
+      <form method="post" action="/defi/{{.C.ID}}/preparer"><button class="secondary">{{.C.Setup.Label}}</button></form>
+      {{if .SetupErr}}<div class="alert bad">⚠️ {{.SetupErr}}</div>
+      {{else if .State.SetupInfo}}<div class="alert info">{{.State.SetupInfo}}</div>{{end}}
+    {{end}}
+  </section>
+
+  <h2>🧭 Parcours guidé</h2>
+  <p class="meta">Lisez l'explication, essayez par vous-même, et ne révélez un indice que si vous êtes bloqué·e. Les indices orientent : ils ne donnent jamais la commande complète.</p>
+  {{range .Steps}}
+  <section class="panel step" id="etape-{{inc .Index}}">
+    <h3><span class="num">{{inc .Index}}</span> {{.Title}}</h3>
+    {{raw .Explain}}
+    {{$step := .Index}}
+    {{range .Hints}}
+      {{if .Revealed}}
+        <div class="hint"><b>Indice {{inc .Index}}</b> {{raw .Text}}</div>
+      {{else if .CanReveal}}
+        <form method="post" action="/defi/{{$.C.ID}}/indice">
+          <input type="hidden" name="etape" value="{{$step}}"><input type="hidden" name="indice" value="{{.Index}}">
+          <button class="hint-btn">💡 Révéler l'indice {{inc .Index}}{{if not $.State.Done}} <small>(−{{$.Penalty}} % des XP)</small>{{end}}</button>
+        </form>
+      {{else}}
+        <div class="hint hidden">🔒 Indice {{inc .Index}}</div>
+      {{end}}
+    {{end}}
+  </section>
+  {{end}}
+
+  <section class="panel verify" id="verification">
+    <h2>✅ Vérification</h2>
+    <p class="meta">CloudQuest interroge directement les émulateurs pour contrôler votre travail.</p>
+    <form method="post" action="/defi/{{.C.ID}}/verifier#verification">
+      {{if .C.Input}}
+        <label for="reponse">{{.C.Input.Label}}</label>
+        <input id="reponse" name="reponse" value="{{.Answer}}" placeholder="{{.C.Input.Placeholder}}" autocomplete="off">
+      {{end}}
+      <button class="primary">Vérifier ma solution</button>
+    </form>
+    {{if .Checked}}
+      <ul class="checks">
+      {{range .Items}}<li class="{{if .OK}}ok{{else}}ko{{end}}"><span>{{if .OK}}✔{{else}}✘{{end}}</span><div>{{.Label}}{{if .Detail}}<small>{{.Detail}}</small>{{end}}</div></li>{{end}}
+      </ul>
+      {{if .Success}}
+        <div class="alert good">🎉 Défi réussi !{{if .Gained}} <b>+{{.Gained}} XP</b>{{end}}
+          {{if .NextC}}<a class="primary small" href="/defi/{{.NextC.ID}}">Défi suivant : {{.NextC.Title}} →</a>
+          {{else}}<a class="primary small" href="/chapitre/{{.Chapter.ID}}#quiz">Passer au quiz du chapitre →</a>{{end}}
+        </div>
+      {{else}}
+        <div class="alert warn">Pas encore. Corrigez les points en rouge et relancez la vérification — les essais sont illimités et gratuits.</div>
+      {{end}}
+    {{end}}
+  </section>
+</div>
+
+<aside>
+  <div class="panel score">
+    <h3>Points en jeu</h3>
+    {{if .State.Done}}<p class="big">{{.State.XPEarned}} XP</p><p class="meta">gagnés sur {{.C.XP}}</p>
+    {{else}}<p class="big">{{.Potential}} XP</p><p class="meta">sur {{.C.XP}} · {{.HintsUsed}} indice(s) révélé(s)<br>plancher : {{.MinPct}} % des points</p>{{end}}
+    <p class="meta">Tentatives : {{.State.Attempts}}</p>
+  </div>
+  <div class="panel">
+    <h3>Notions</h3>
+    <div class="tags">{{range .C.Concepts}}<span>{{.}}</span>{{end}}</div>
+  </div>
+  {{if .C.Docs}}
+  <div class="panel">
+    <h3>Documentation</h3>
+    <ul class="docs">{{range .C.Docs}}<li><a href="{{.URL}}" target="_blank" rel="noopener">{{.Label}} ↗</a></li>{{end}}</ul>
+  </div>
+  {{end}}
+  <div class="panel">
+    <h3>🔑 Accès et identifiants</h3>
+    <ul class="docs">
+      <li>S3 : <code>{{.Cfg.S3Endpoint}}</code></li>
+      <li>DynamoDB : <code>{{.Cfg.DynamoEndpoint}}</code></li>
+      <li>SQS : <code>{{.Cfg.SQSEndpoint}}</code></li>
+      <li>Clé d'accès : <code>{{.Cfg.AccessKey}}</code></li>
+      <li>Clé secrète : <code>{{.Cfg.SecretKey}}</code></li>
+      <li>Région : <code>{{.Cfg.Region}}</code></li>
+      <li><a href="{{.Cfg.S3Console}}" target="_blank" rel="noopener">Console MinIO ↗</a> <small>(mêmes identifiants)</small></li>
+      <li><a href="{{.Cfg.SQSConsole}}" target="_blank" rel="noopener">Interface ElasticMQ ↗</a></li>
+    </ul>
+  </div>
+</aside>
+</div>
+{{end}}

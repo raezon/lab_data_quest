@@ -1,0 +1,56 @@
+{{define "content"}}
+<h1>Bonjour {{.Player}} 👋</h1>
+<p class="lead">Choisissez un chapitre. Les défis d'un chapitre se débloquent dans l'ordre ; le projet final s'ouvre une fois les trois premiers chapitres terminés.</p>
+{{template "health" .}}
+
+<section class="grid two">
+{{range .Cards}}
+  <a class="card {{if .Locked}}locked{{end}} {{if .Complete}}complete{{end}}" style="--c:{{.Color}}" {{if not .Locked}}href="/chapitre/{{.ID}}"{{end}}>
+    <div class="card-head"><span class="icon">{{.Icon}}</span>
+      <div><h2>{{.Title}}</h2><small>{{.Service}} → {{.LocalTool}}</small></div>
+    </div>
+    <div class="bar"><i style="width:{{.Pct}}%"></i></div>
+    <p class="meta">
+      {{if .Locked}}🔒 Terminez d'abord : {{range $i, $r := .Requires}}{{if $i}}, {{end}}{{$r}}{{end}}
+      {{else}}{{.Done}}/{{.Total}} défis · quiz {{.QuizDone}}/{{.QuizTotal}}{{if .Complete}} · ✅ terminé{{end}}{{end}}
+    </p>
+  </a>
+{{end}}
+</section>
+
+<section class="panel">
+  <h2>Grades</h2>
+  <ol class="ranks">
+  {{range .Ranks}}<li class="{{if ge $.XP .MinXP}}reached{{end}}"><span>{{.Icon}}</span><b>{{.Name}}</b><small>{{.MinXP}} XP</small></li>{{end}}
+  </ol>
+</section>
+
+<section class="panel">
+  <h2>Boîte à outils</h2>
+  <table class="tools">
+    <tr><th>Service</th><th>API</th><th>Interface web</th><th>Ligne de commande</th></tr>
+    <tr><td>S3 (MinIO)</td><td><code>{{.Cfg.S3Endpoint}}</code></td><td><a href="{{.Cfg.S3Console}}" target="_blank" rel="noopener">Console MinIO</a></td><td><code>docker compose run --rm mc ls local</code></td></tr>
+    <tr><td>DynamoDB</td><td><code>{{.Cfg.DynamoEndpoint}}</code></td><td>—</td><td><code>docker compose run --rm aws dynamodb list-tables --endpoint-url {{.Cfg.DynamoEndpoint}}</code></td></tr>
+    <tr><td>SQS (ElasticMQ)</td><td><code>{{.Cfg.SQSEndpoint}}</code></td><td><a href="{{.Cfg.SQSConsole}}" target="_blank" rel="noopener">Interface ElasticMQ</a></td><td><code>docker compose run --rm aws sqs list-queues --endpoint-url {{.Cfg.SQSEndpoint}}</code></td></tr>
+  </table>
+</section>
+
+<section class="panel" id="identifiants">
+  <h2>🔑 Identifiants des outils</h2>
+  <table class="tools">
+    <tr><th>Outil</th><th>Adresse</th><th>Identifiant</th><th>Mot de passe / secret</th></tr>
+    <tr><td>Console web MinIO</td><td><a href="{{.Cfg.S3Console}}" target="_blank" rel="noopener">{{.Cfg.S3Console}}</a></td><td><code>{{.Cfg.AccessKey}}</code></td><td><code>{{.Cfg.SecretKey}}</code></td></tr>
+    <tr><td>API S3 (MinIO)</td><td><code>{{.Cfg.S3Endpoint}}</code></td><td>clé d'accès <code>{{.Cfg.AccessKey}}</code></td><td>clé secrète <code>{{.Cfg.SecretKey}}</code></td></tr>
+    <tr><td>API DynamoDB Local</td><td><code>{{.Cfg.DynamoEndpoint}}</code></td><td>clé d'accès <code>{{.Cfg.AccessKey}}</code></td><td>clé secrète <code>{{.Cfg.SecretKey}}</code></td></tr>
+    <tr><td>API SQS (ElasticMQ)</td><td><code>{{.Cfg.SQSEndpoint}}</code></td><td>clé d'accès <code>{{.Cfg.AccessKey}}</code></td><td>clé secrète <code>{{.Cfg.SecretKey}}</code></td></tr>
+    <tr><td>Interface web ElasticMQ</td><td><a href="{{.Cfg.SQSConsole}}" target="_blank" rel="noopener">{{.Cfg.SQSConsole}}</a></td><td colspan="2">aucune authentification</td></tr>
+  </table>
+  <p class="meta">Région pour tous les services : <code>{{.Cfg.Region}}</code>. DynamoDB Local et ElasticMQ ne vérifient pas les clés, mais les outils AWS exigent d'en fournir : utilisez les mêmes partout.</p>
+  <p class="meta">Les clients <code>mc</code> et <code>aws</code> lancés via <code>docker compose run --rm …</code> sont déjà configurés. Pour une AWS CLI ou un SDK installés sur votre poste :</p>
+  <pre><code>export AWS_ACCESS_KEY_ID={{.Cfg.AccessKey}}
+export AWS_SECRET_ACCESS_KEY={{.Cfg.SecretKey}}
+export AWS_DEFAULT_REGION={{.Cfg.Region}}</code></pre>
+  <p class="meta">Pour un client <code>mc</code> installé sur votre poste :</p>
+  <pre><code>mc alias set local {{.Cfg.S3Endpoint}} {{.Cfg.AccessKey}} {{.Cfg.SecretKey}}</code></pre>
+</section>
+{{end}}
